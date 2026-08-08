@@ -15,6 +15,7 @@ Weather API. One page, seven views, as much detail as the API will give up.
 | **Last 24h** | Observed conditions charted hour by hour, extremes and totals, and the full reading table |
 | **History** | Daily summaries for any date range back to 2001, plotted against 30-year climate normals, with station-reported summaries alongside and a drill-down that reconstructs any past day hour by hour |
 | **Air & Sun** | Air quality index with per-pollutant breakdown and a 24-hour forecast; sunrise/sunset/solar noon, all three twilight phases, moon phase and illumination |
+| **Rivers & Tides** | Live river/sea gauge levels against their typical range, flood warnings and alerts, and UKHO tide predictions with next high/low, a height curve and a multi-day table |
 | **Maps** | Xweather raster maps with 15 stackable layers (radar, satellite, temperature, isobars, alerts, storm cells, lightning, wildfires, tropical systems and more) and a −60m → +60m time slider |
 
 Throughout: place autocomplete, geolocation, saved places, °C/°F and 12/24-hour
@@ -36,10 +37,11 @@ toggles, and shareable `?p=` URLs.
 
 ### Environment variables
 
-| Variable | Description |
-|----------|-------------|
-| `XWEATHER_CLIENT_ID` | Xweather application ID |
-| `XWEATHER_CLIENT_SECRET` | Xweather application secret |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `XWEATHER_CLIENT_ID` | yes | Xweather application ID |
+| `XWEATHER_CLIENT_SECRET` | yes | Xweather application secret |
+| `ADMIRALTY_API_KEY` | no | UKHO ADMIRALTY UK Tidal API key for tide times. The [Discovery tier](https://admiraltyapi.portal.azure-api.net/) is free (10,000 calls/month). Without it, the Rivers & Tides tab still shows river levels and flood warnings. |
 
 Both are read server-side only, by `src/lib/xweather.ts`. They never reach the
 browser — even raster map tiles, which carry the credentials in their URL path,
@@ -69,10 +71,12 @@ src/
 │       ├── archive/        # One past day, hour by hour
 │       ├── search/         # Place autocomplete
 │       ├── map/            # Raster map proxy (keeps credentials server-side)
+│       ├── water/          # River levels, flood warnings and tides
 │       └── diagnostics/    # Which Xweather endpoints your key unlocks
 ├── components/             # LocationBar, the seven panels, Chart, ui primitives
 └── lib/
-    ├── xweather.ts         # SERVER ONLY — the API client
+    ├── xweather.ts         # SERVER ONLY — the Xweather client
+    ├── water.ts            # SERVER ONLY — Environment Agency + ADMIRALTY
     ├── weather-types.ts    # Response types
     └── weather-format.ts   # Client-safe formatting helpers
 ```
@@ -106,6 +110,14 @@ It calls all twenty endpoint variants the app uses and reports which answered,
 which are missing from your subscription, and which returned no data for that
 location.
 
+## Data sources
+
+| Source | Auth | Covers |
+|--------|------|--------|
+| [Vaisala Xweather](https://www.xweather.com/) | ID + secret | Everything on the weather tabs |
+| [EA flood-monitoring](https://environment.data.gov.uk/flood-monitoring/doc/reference) | none | River/sea gauges and flood warnings. Open Government Licence. Its flood *warnings* are England-only, but the station feed carries Welsh gauges owned by Natural Resources Wales under the same licence — which is how the Tawe appears without a portal signup |
+| [ADMIRALTY UK Tidal API](https://admiraltyapi.portal.azure-api.net/) | subscription key | Tide predictions for 607 UK stations |
+
 ## Notes
 
 - Xweather returns both metric and imperial fields (`tempC`/`tempF`,
@@ -114,7 +126,18 @@ location.
   local wall clock at the place you're looking at, wherever you happen to be.
 - Daily summary queries are capped at about one month per request upstream; the
   history view enforces that before it asks.
+- The Environment Agency and ADMIRALTY both report in UTC. Times from those
+  feeds are re-stamped with the selected place's UTC offset before display, so
+  a tide at 18:44 BST does not show as 17:44.
+- Tide times are predictions and do not account for weather or storm surge.
 
-## Licence
+## Attribution
 
-Weather data © Vaisala Xweather, subject to their terms of service.
+- Weather data © Vaisala Xweather, subject to their terms of service.
+- River levels and flood warnings © Environment Agency, [Open Government Licence](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/); Welsh gauges in that feed are owned by Natural Resources Wales.
+- Tide predictions © UK Hydrographic Office (ADMIRALTY).
+
+The app icon is an original device — a gold double-towered castle over the
+blue-and-white wavy bars of Swansea Bay — inspired by Swansea's civic
+symbolism. It is **not** the city's coat of arms, which was granted by the
+College of Arms in 1922 and belongs to the City and County of Swansea.

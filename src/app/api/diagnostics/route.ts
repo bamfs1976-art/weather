@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { hasCredentials, xwFetch } from "@/lib/xweather";
+import { hasCredentials, resolvePlace, xwFetch } from "@/lib/xweather";
+import { getFloodWarnings, getRiverStations, getTides, hasAdmiraltyKey } from "@/lib/water";
 
 export const dynamic = "force-dynamic";
 
@@ -60,13 +61,40 @@ export async function GET(request: NextRequest) {
     })
   );
 
+  /*
+   * The non-Xweather sources too, so one call tells you the state of every
+   * upstream the app depends on.
+   */
+  const resolved = await resolvePlace(place);
+  const point = resolved.ok && resolved.data
+    ? { lat: resolved.data.lat, lon: resolved.data.lon }
+    : null;
+
+  const water = point
+    ? await (async () => {
+        const [floods, rivers, tides] = await Promise.all([
+          getFloodWarnings(point.lat, point.lon, 30),
+          getRiverStations(point.lat, point.lon, 20, 2),
+          getTides(point.lat, point.lon, 1),
+        ]);
+        return [
+          { endpoint: "EA flood-monitoring: floods", ok: floods.ok, code: floods.code, message: floods.error },
+          { endpoint: "EA flood-monitoring: stations + measures", ok: rivers.ok, code: rivers.code, message: rivers.error },
+          { endpoint: "ADMIRALTY UK Tidal API", ok: tides.ok, code: tides.code, message: tides.error },
+        ];
+      })()
+    : [];
+
+  const all = [...results, ...water];
+
   return NextResponse.json(
     {
       credentials: true,
+      admiraltyKey: hasAdmiraltyKey(),
       location: place,
-      available: results.filter((r) => r.ok).map((r) => r.endpoint),
-      unavailable: results.filter((r) => !r.ok),
-      results,
+      available: all.filter((r) => r.ok).map((r) => r.endpoint),
+      unavailable: all.filter((r) => !r.ok),
+      results: all,
     },
     { headers: { "Cache-Control": "no-store" } }
   );
