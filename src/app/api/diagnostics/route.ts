@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  * see what your key actually unlocks before wondering why a card is empty.
  */
 export async function GET(request: NextRequest) {
-  const place = request.nextUrl.searchParams.get("p")?.trim() || "london,uk";
+  const place = request.nextUrl.searchParams.get("p")?.trim() || "51.6656,-3.9333";
 
   if (!hasCredentials()) {
     return NextResponse.json(

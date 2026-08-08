@@ -32,7 +32,16 @@ const STORAGE = {
   hour12: "wx:hour12",
 } as const;
 
-const FALLBACK_PLACE: SavedPlace = { query: "london,uk", label: "London, UK" };
+/*
+ * Used when geolocation is unavailable or declined and nothing is saved.
+ * Coordinates rather than a name on purpose: Xweather's place search resolves
+ * "Morriston, Swansea, UK" to Port Talbot ~15km east, and "Swansea, Wales, UK"
+ * to the city centre ~5km south. The lat/lon is unambiguous.
+ */
+const FALLBACK_PLACE: SavedPlace = {
+  query: "51.6656,-3.9333",
+  label: "Morriston, Swansea",
+};
 
 export default function WeatherPage() {
   const [place, setPlace] = useState<SavedPlace | null>(null);

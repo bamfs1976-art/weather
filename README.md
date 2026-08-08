@@ -99,7 +99,7 @@ Next, React and React DOM.
 If a card is empty, ask the API what your key can actually see:
 
 ```bash
-curl "http://localhost:3000/api/diagnostics?p=cardiff,uk" | jq
+curl "http://localhost:3000/api/diagnostics?p=51.6656,-3.9333" | jq
 ```
 
 It calls all twenty endpoint variants the app uses and reports which answered,
