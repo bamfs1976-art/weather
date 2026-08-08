@@ -165,8 +165,8 @@ export async function GET(request: NextRequest) {
           async ({ view, zoom }) => {
             const layers = `flat,water-depth,${view},countries-outlines,admin-cities`;
             const url =
-              `${origin}/api/map?lat=${point.lat.toFixed(4)}&lon=${point.lon.toFixed(4)}` +
-              `&zoom=${zoom}&layers=${encodeURIComponent(layers)}&offset=current&w=300&h=200`;
+              `${origin}/api/map/${encodeURIComponent(layers)}/${zoom}` +
+              `/${point.lat.toFixed(4)},${point.lon.toFixed(4)}/current/300x200.png`;
             try {
               const res = await fetch(url, {
                 cache: "no-store",

@@ -110,17 +110,21 @@ export function MapPanel({
       .join(",");
   }, [view, overlays, theme]);
 
+  /*
+   * Everything that varies goes in the path, not the query string. A cache in
+   * front of this route was keying on the path alone and serving one image for
+   * every set of layers and every zoom — the map appeared frozen in every
+   * browser. Distinct paths cannot be collapsed that way.
+   */
   const src = useMemo(() => {
-    const params = new URLSearchParams({
-      lat: place.lat.toFixed(4),
-      lon: place.lon.toFixed(4),
-      zoom: String(zoom),
-      layers: layerParam,
-      offset: OFFSETS[offsetIndex].id,
-      w: "1000",
-      h: "620",
-    });
-    return `/api/map?${params.toString()}`;
+    const parts = [
+      encodeURIComponent(layerParam),
+      String(zoom),
+      `${place.lat.toFixed(4)},${place.lon.toFixed(4)}`,
+      OFFSETS[offsetIndex].id,
+      "1000x620.png",
+    ];
+    return `/api/map/${parts.join("/")}`;
   }, [place.lat, place.lon, zoom, layerParam, offsetIndex]);
 
   // Only trust the stored verdict if it belongs to the URL now on screen.
@@ -141,11 +145,10 @@ export function MapPanel({
    * onError re-requests the same (already-cached) URL just to read the reason.
    */
   function handleLoad(loaded: string) {
-    const sent = new URL(loaded, window.location.origin).searchParams;
-    const zoomShown = sent.get("zoom") ?? "";
+    const zoomShown = String(zoom);
     setStatus({
       src: loaded,
-      shown: { layers: sent.get("layers") ?? "", zoom: zoomShown },
+      shown: { layers: layerParam, zoom: zoomShown },
     });
     /*
      * The response headers say which layers actually rendered, and <img> cannot

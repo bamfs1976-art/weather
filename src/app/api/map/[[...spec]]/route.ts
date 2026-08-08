@@ -15,13 +15,47 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * GET /api/map?lat=&lon=&zoom=&layers=&offset=&w=&h=
+ * Read the path form `{layers}/{zoom}/{lat},{lon}/{offset}/{w}x{h}` into the
+ * same shape the query form produces, so validation below has one input to
+ * check rather than two. Anything malformed is simply left unset and fails the
+ * existing checks.
+ */
+function specToParams(spec: string[]): URLSearchParams {
+  const [layers, zoom, coords, offset, size] = spec;
+  const params = new URLSearchParams();
+  if (layers) params.set("layers", decodeURIComponent(layers));
+  if (zoom) params.set("zoom", zoom);
+  const [lat, lon] = (coords ?? "").split(",");
+  if (lat) params.set("lat", lat);
+  if (lon) params.set("lon", lon);
+  if (offset) params.set("offset", offset);
+  const [width, height] = (size ?? "").replace(/\.png$/, "").split("x");
+  if (width) params.set("w", width);
+  if (height) params.set("h", height);
+  return params;
+}
+
+/**
+ * GET /api/map/{layers}/{zoom}/{lat},{lon}/{offset}/{w}x{h}
+ * GET /api/map?lat=&lon=&zoom=&layers=&offset=&w=&h=   (legacy)
  *
  * Proxies an Xweather raster map image. The client_id/client_secret pair is
  * embedded in the upstream path, so the browser never sees it.
+ *
+ * The parameters live in the path rather than the query string because they
+ * used to live in the query string, and something between this route and the
+ * browser cached on the path alone: five different layer stacks all returned
+ * byte-identical images carrying the X-Map-Layers header of whichever request
+ * populated the cache first. Distinct paths cannot be conflated by a cache key
+ * that ignores the query, whatever the intermediary turns out to be. The query
+ * form still works so a page loaded before this change keeps rendering.
  */
-export async function GET(request: NextRequest) {
-  const params = request.nextUrl.searchParams;
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ spec?: string[] }> }
+) {
+  const { spec } = await context.params;
+  const params = spec?.length ? specToParams(spec) : request.nextUrl.searchParams;
 
   if (!hasCredentials()) {
     return NextResponse.json(
@@ -158,7 +192,20 @@ export async function GET(request: NextRequest) {
         status: 200,
         headers: {
           "Content-Type": upstream.headers.get("content-type") ?? "image/png",
-          "Cache-Control": "public, max-age=120",
+          /*
+           * "private" keeps this out of shared caches. It was "public", and a
+           * shared cache in front of this route stored one image and served it
+           * for every distinct request — proven by five different layer stacks
+           * returning identical bytes and identical X-Map-Layers headers. The
+           * browser still caches it, keyed on the full URL, which is where the
+           * caching was doing any good in the first place: these images vary by
+           * place, layers, zoom and time, so edge hits were always going to be
+           * rare. Netlify's own directive is set explicitly rather than
+           * inferred, so the intent survives any change of default.
+           */
+          "Cache-Control": "private, max-age=120",
+          "Netlify-CDN-Cache-Control": "no-store",
+          "CDN-Cache-Control": "no-store",
           // What actually rendered, so the client can report any downgrade.
           "X-Map-Layers": used,
           "X-Map-Requested": rawLayers.join(","),
