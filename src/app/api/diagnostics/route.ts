@@ -151,6 +151,53 @@ export async function GET(request: NextRequest) {
   const hashes = mapStacks.filter((s) => s.hash).map((s) => s.hash);
   const distinctImages = new Set(hashes).size;
 
+  /*
+   * The same stacks again, but through this app's own /api/map instead of
+   * straight to Xweather. That route is the one link never yet measured in
+   * production: the probe above proves the service sends distinct pictures,
+   * so if these come back identical the proxy or the CDN in front of it is
+   * collapsing them, and the browser was never at fault.
+   */
+  const origin = new URL(request.url).origin;
+  const routeStacks = point
+    ? await Promise.all(
+        [...stackViews.map((view) => ({ view, zoom: 7 })), { view: "radar-global", zoom: 9 }].map(
+          async ({ view, zoom }) => {
+            const layers = `flat,water-depth,${view},countries-outlines,admin-cities`;
+            const url =
+              `${origin}/api/map?lat=${point.lat.toFixed(4)}&lon=${point.lon.toFixed(4)}` +
+              `&zoom=${zoom}&layers=${encodeURIComponent(layers)}&offset=current&w=300&h=200`;
+            try {
+              const res = await fetch(url, {
+                cache: "no-store",
+                signal: AbortSignal.timeout(12_000),
+              });
+              if (!res.ok) {
+                return {
+                  layers, zoom, ok: false, status: res.status, bytes: null, hash: null,
+                  detail: (await res.text().catch(() => "")).slice(0, 160),
+                };
+              }
+              const buffer = Buffer.from(await res.arrayBuffer());
+              const { createHash } = await import("node:crypto");
+              return {
+                layers, zoom, ok: true, status: res.status, bytes: buffer.length,
+                hash: createHash("sha1").update(buffer).digest("hex").slice(0, 12),
+                detail: res.headers.get("X-Map-Layers"),
+              };
+            } catch (err) {
+              return {
+                layers, zoom, ok: false, status: null, bytes: null, hash: null,
+                detail: err instanceof Error ? err.name : "fetch failed",
+              };
+            }
+          }
+        )
+      )
+    : [];
+
+  const routeDistinct = new Set(routeStacks.filter((s) => s.hash).map((s) => s.hash)).size;
+
   const all = [...results, ...water];
 
   return NextResponse.json(
@@ -178,6 +225,17 @@ export async function GET(request: NextRequest) {
               ? "service returns a different image per stack — any sameness on screen is a display fault"
               : "service returned identical bytes for different stacks — the fault is upstream, not in the browser",
         results: mapStacks,
+      },
+      routeStacks: {
+        distinctImages: routeDistinct,
+        probed: routeStacks.length,
+        verdict:
+          routeStacks.length === 0
+            ? "not probed"
+            : routeDistinct === routeStacks.length
+              ? "the proxy route also returns a different image per stack — the whole server path is sound"
+              : "the proxy route collapsed different stacks to identical bytes — the fault is the route or its cache, not the browser",
+        results: routeStacks,
       },
     },
     { headers: { "Cache-Control": "no-store" } }
