@@ -18,6 +18,22 @@ import type {
   WaterPayload,
 } from "@/lib/water-types";
 
+
+/**
+ * Bound the request. Netlify functions can sit for tens of seconds when an
+ * upstream is slow, and an unbounded fetch leaves the panel on its loading
+ * skeleton indefinitely with no way for the user to tell it is stuck.
+ */
+async function fetchWithTimeout(url: string, ms = 20_000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Rivers, flood warnings and tides for the selected place. */
 export function WaterPanel({
   placeQuery,
@@ -34,12 +50,20 @@ export function WaterPanel({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/water?p=${encodeURIComponent(placeQuery)}`);
+      const res = await fetchWithTimeout(
+        `/api/water?p=${encodeURIComponent(placeQuery)}`
+      );
       const payload = await res.json();
       if (!res.ok) throw new Error(payload.error ?? "Could not load water data.");
       setData(payload as WaterPayload);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load water data.");
+      setError(
+        err instanceof Error && err.name === "AbortError"
+          ? "The request timed out. The upstream services can be slow — try Refresh."
+          : err instanceof Error
+            ? err.message
+            : "Could not load water data."
+      );
       setData(null);
     } finally {
       setLoading(false);

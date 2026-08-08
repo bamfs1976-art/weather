@@ -26,7 +26,11 @@ import type {
   WeatherPeriod,
 } from "./weather-types";
 
-const DATA_BASE = "https://data.api.xweather.com";
+/*
+ * Overridable so the server-side response handling can be exercised against
+ * recorded fixtures. Unset in production, where it falls back to the real API.
+ */
+const DATA_BASE = process.env.XWEATHER_BASE_URL ?? "https://data.api.xweather.com";
 export const MAPS_BASE = "https://maps.api.xweather.com";
 
 /** Cache lifetimes (seconds) per class of data. */
@@ -201,9 +205,119 @@ function normalisePeriods<T>(value: T): T {
     return { ...record, periods: [] } as T;
   }
   if (!Array.isArray(periods)) {
-    return { ...record, periods: [periods] } as T;
+    return { ...record, periods: [flattenPeriod(periods)] } as T;
   }
-  return value;
+  return { ...record, periods: periods.map(flattenPeriod) } as T;
+}
+
+
+/**
+ * The summary endpoints (conditions/summary, observations/summary) return a
+ * nested period shape — temp:{maxC,minC}, precip:{totalMM}, weather:{primary,
+ * phrase,…} — while every other endpoint returns those fields flat. Panels are
+ * written against the flat shape, so a summary period previously rendered
+ * blank temperatures and, worse, passed the `weather` OBJECT straight to React,
+ * which throws "objects are not valid as a React child".
+ *
+ * Flattening here means one shape reaches the UI. Endpoints that are already
+ * flat pass through untouched, because each branch only fires when the nested
+ * group is actually present.
+ */
+function flattenPeriod(period: unknown): unknown {
+  if (!period || typeof period !== "object" || Array.isArray(period)) return period;
+
+  const raw = period as Record<string, unknown>;
+  // observations/summary nests the measurements one level deeper again.
+  const merged: Record<string, unknown> =
+    raw.summary && typeof raw.summary === "object" && !Array.isArray(raw.summary)
+      ? { ...raw, ...(raw.summary as Record<string, unknown>) }
+      : { ...raw };
+
+  const obj = (value: unknown): Record<string, unknown> | null =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+
+  /*
+   * Read every nested group first, then remove the group keys, then write the
+   * flat fields. Doing it in that order matters: "humidity" is both a group
+   * name and a flat field name, so lifting in place would either skip the
+   * write or delete the value it had just written.
+   */
+  const groups = {
+    temp: obj(merged.temp),
+    dewpt: obj(merged.dewpt),
+    humidity: obj(merged.humidity),
+    precip: obj(merged.precip),
+    snow: obj(merged.snow),
+    wind: obj(merged.wind),
+    pressure: obj(merged.pressure),
+    visibility: obj(merged.visibility),
+    uvi: obj(merged.uvi),
+    weather: obj(merged.weather),
+  };
+
+  for (const [key, value] of Object.entries(groups)) {
+    if (value) delete merged[key];
+  }
+
+  const set = (to: string, value: unknown) => {
+    if (value !== undefined && merged[to] === undefined) merged[to] = value;
+  };
+
+  const { temp, dewpt, humidity, precip, snow, wind, pressure, visibility, uvi, weather } = groups;
+
+  set("maxTempC", temp?.maxC); set("maxTempF", temp?.maxF);
+  set("minTempC", temp?.minC); set("minTempF", temp?.minF);
+  set("avgTempC", temp?.avgC); set("avgTempF", temp?.avgF);
+
+  set("avgDewpointC", dewpt?.avgC); set("avgDewpointF", dewpt?.avgF);
+  set("dewpointC", dewpt?.avgC);    set("dewpointF", dewpt?.avgF);
+
+  set("humidity", humidity?.avg);
+  set("minHumidity", humidity?.min);
+  set("maxHumidity", humidity?.max);
+
+  set("precipMM", precip?.totalMM); set("precipIN", precip?.totalIN);
+  set("snowCM", snow?.totalCM);     set("snowIN", snow?.totalIN);
+
+  set("windSpeedMaxKPH", wind?.maxKPH); set("windSpeedMaxMPH", wind?.maxMPH);
+  set("windSpeedKPH", wind?.avgKPH);    set("windSpeedMPH", wind?.avgMPH);
+  set("windGustKPH", wind?.gustKPH);    set("windGustMPH", wind?.gustMPH);
+  set("windDirMax", wind?.maxDir);      set("windDirMaxDEG", wind?.maxDirDEG);
+
+  set("pressureMB", pressure?.avgMB); set("pressureIN", pressure?.avgIN);
+  set("visibilityKM", visibility?.avgKM); set("visibilityMI", visibility?.avgMI);
+  set("maxUvi", uvi?.max);
+
+  if (weather) {
+    set("weatherPrimary", weather.primary);
+    set("weatherPrimaryCoded", weather.primaryCoded);
+    set("icon", weather.icon);
+    const phrase = weather.phrase;
+    const phraseText =
+      typeof phrase === "string"
+        ? phrase
+        : obj(phrase)?.phrase;
+    merged.weather =
+      typeof phraseText === "string"
+        ? phraseText
+        : typeof weather.primary === "string"
+          ? weather.primary
+          : undefined;
+  }
+
+  /*
+   * Last line of defence. Any value the UI puts in a text node must be a
+   * primitive; an object here is what produced React error #31.
+   */
+  for (const [key, value] of Object.entries(merged)) {
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      delete merged[key];
+    }
+  }
+
+  return merged;
 }
 
 /** Await a fetch and collapse the one-element result array into an object. */

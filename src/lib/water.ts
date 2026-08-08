@@ -89,8 +89,14 @@ async function getJSON<T>(
     res = await fetch(url, {
       next: { revalidate },
       headers: { Accept: "application/json", ...headers },
+      // Cap each upstream so one slow service can't run the serverless
+      // function out of time and take the whole payload down with it.
+      signal: AbortSignal.timeout(8_000),
     });
   } catch (err) {
+    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      return fail<T>("The service did not respond in time.", "timeout");
+    }
     const message = err instanceof Error ? err.message : "Network error";
     return fail<T>(`Could not reach the service (${message}).`, "network");
   }
@@ -246,10 +252,10 @@ export async function getRiverStations(
   lat: number,
   lon: number,
   distKm = 20,
-  limit = 4,
+  limit = 3,
   offsetMinutes: number | null = null
 ): Promise<Section<RiverStation[]>> {
-  const url = `${EA_BASE}/id/stations?lat=${lat}&long=${lon}&dist=${distKm}&parameter=level&_limit=40`;
+  const url = `${EA_BASE}/id/stations?lat=${lat}&long=${lon}&dist=${distKm}&parameter=level&_limit=20`;
   const section = await getJSON<{ items?: RawStation | RawStation[] }>(
     url,
     TTL.readings

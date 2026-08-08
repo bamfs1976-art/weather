@@ -67,8 +67,14 @@ async function getJSON<T>(
     res = await fetch(url, {
       next: { revalidate },
       headers: { Accept: "application/json", ...headers },
+      // Cap each upstream so one slow service can't run the serverless
+      // function out of time and take the whole payload down with it.
+      signal: AbortSignal.timeout(8_000),
     });
   } catch (err) {
+    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      return fail<T>("The service did not respond in time.", "timeout");
+    }
     const message = err instanceof Error ? err.message : "Network error";
     return fail<T>(`Could not reach the service (${message}).`, "network");
   }
