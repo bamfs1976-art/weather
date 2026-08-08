@@ -20,6 +20,13 @@ import type { ResolvedPlace, ThemeName } from "@/lib/weather-types";
  */
 import { WEATHER_OVERLAYS as OVERLAYS, WEATHER_VIEWS as VIEWS } from "@/lib/map-layers";
 
+/**
+ * Short commit ref of the build serving this bundle, injected by netlify.toml.
+ * It is the quickest way to tell a genuine fault from a phone still running an
+ * old cached bundle — a distinction that cost several rounds of blind fixes.
+ */
+const BUILD_REF = (process.env.NEXT_PUBLIC_BUILD_REF ?? "").slice(0, 7);
+
 const OFFSETS = [
   { id: "-60minutes", label: "-60m" },
   { id: "-45minutes", label: "-45m" },
@@ -51,6 +58,13 @@ export function MapPanel({
   const [loading, setLoading] = useState(true);
   /** Set when the server had to drop layers the upstream would not render. */
   const [droppedLayers, setDroppedLayers] = useState<string[]>([]);
+  /**
+   * What the picture on screen actually is, as opposed to what the controls
+   * currently say. The two drift apart when a stale bundle is running or a
+   * response is served from cache, and without this the only symptom is "the
+   * map looks wrong", which is impossible to act on.
+   */
+  const [shown, setShown] = useState<{ layers: string; zoom: string } | null>(null);
 
   useEffect(() => {
     if (!playing) {
@@ -140,6 +154,11 @@ export function MapPanel({
 
         const blob = await res.blob();
         if (cancelled) return;
+        const sent = new URL(src, window.location.origin).searchParams;
+        setShown({
+          layers: used ?? sent.get("layers") ?? "",
+          zoom: sent.get("zoom") ?? "",
+        });
         objectUrl = URL.createObjectURL(blob);
         setImageUrl((previous) => {
           if (previous) URL.revokeObjectURL(previous);
@@ -250,6 +269,17 @@ export function MapPanel({
             )}
           </div>
         </div>
+
+        {/*
+          A caption describing the image actually on screen. If this disagrees
+          with the buttons above it, the page is running stale code or serving a
+          cached response — which is otherwise indistinguishable from a bug in
+          the map itself.
+        */}
+        <p className="wx-dim mt-2 font-mono text-[11px] break-all">
+          showing {shown ? `${shown.layers} · zoom ${shown.zoom}` : "…"}
+          {BUILD_REF ? ` · build ${BUILD_REF}` : ""}
+        </p>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button

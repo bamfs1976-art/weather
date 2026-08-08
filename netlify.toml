@@ -6,7 +6,11 @@
 # Netlify Functions and read the credentials at request time).
 
 [build]
-  command = "npm run build"
+  # COMMIT_REF is set by Netlify. Passing it through as a NEXT_PUBLIC_ variable
+  # bakes the commit into the client bundle, so the running build is visible in
+  # the app itself — the only reliable way to tell a real fault from a phone
+  # still serving an old cached bundle.
+  command = "NEXT_PUBLIC_BUILD_REF=$COMMIT_REF npm run build"
   publish = ".next"
 
 [build.environment]
