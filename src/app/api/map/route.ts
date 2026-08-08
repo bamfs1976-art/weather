@@ -1,74 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildMapUrl, hasCredentials } from "@/lib/xweather";
+import {
+  ALLOWED_LAYERS,
+  BASE_LAYER_SET as BASE,
+  DROPPABLE_LAYERS as DECORATION,
+} from "@/lib/map-layers";
 
 export const dynamic = "force-dynamic";
-
-/**
- * Layer tokens the UI is allowed to request. The credentials live in the
- * upstream URL path, so this route must never interpolate unvalidated input.
- */
-const ALLOWED_LAYERS = new Set([
-  // base maps
-  "flat",
-  "flat-dk",
-  "blue-marble",
-  "terrain",
-  "terrain-dk",
-  "sat-global",
-  "water-depth",
-  // administrative overlays. "admin" is the documented combined
-  // borders-and-cities overlay; the invented "admin-cities"/"countries" pair
-  // was rejected upstream, and because it rode on every request it took the
-  // whole map down whatever else was selected.
-  "admin",
-  "admin-dk",
-  "countries",
-  "counties",
-  "states",
-  "interstates",
-  "roads",
-  "water",
-  // weather layers
-  "radar",
-  "radar-global",
-  "alerts",
-  "satellite",
-  "satellite-infrared-color",
-  "satellite-visible",
-  "temperatures",
-  "dew-points",
-  "wind-speeds",
-  "wind-dir",
-  "humidity",
-  "pressure-isobars",
-  "precip",
-  "precip-1hr",
-  "precip-24hr",
-  "snow-depth",
-  "clouds",
-  "lightning-strikes-5m-icons",
-  "stormcells",
-  "fires",
-  "smoke",
-  "air-quality-index",
-  "heat-index",
-  "wind-chill",
-  "tropical-cyclones",
-  "visibility",
-  "uv-index",
-]);
-
-/** Layers that only decorate — safe to drop if the upstream rejects a stack. */
-const DECORATION = new Set([
-  "admin", "admin-dk", "countries", "counties", "states", "interstates",
-  "roads", "water",
-]);
-
-/** Base maps — at least one of these has to survive for a map to exist. */
-const BASE = new Set([
-  "flat", "flat-dk", "blue-marble", "terrain", "terrain-dk", "sat-global",
-  "water-depth",
-]);
 
 const OFFSET = /^(current|[+-]\d{1,4}(min|minutes|hour|hours|day|days))$/;
 
@@ -117,7 +55,10 @@ export async function GET(request: NextRequest) {
     .map((layer) => layer.trim())
     .filter(Boolean);
 
-  if (rawLayers.length === 0 || rawLayers.length > 8) {
+  // A full stack is base + mask + view + every overlay + tracks + borders +
+  // labels, which comfortably passes ten. The cap only exists to stop an
+  // absurdly long URL, so it sits well above any stack the UI can build.
+  if (rawLayers.length === 0 || rawLayers.length > 20) {
     return NextResponse.json({ error: "Invalid layer list." }, { status: 400 });
   }
 

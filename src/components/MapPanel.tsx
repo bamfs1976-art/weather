@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, Chip, Notice } from "./ui";
 import type { ResolvedPlace, ThemeName } from "@/lib/weather-types";
-
-/**
+/*
  * The weather layers split into two kinds, and conflating them was a bug:
  *
  *  - A "view" is an opaque, full-coverage raster (radar, satellite, a
@@ -14,27 +13,12 @@ import type { ResolvedPlace, ThemeName } from "@/lib/weather-types";
  *    under opaque sheets and made zoom look broken too.
  *  - An "overlay" is sparse — alerts, storm cells, strikes — and several can
  *    sensibly sit on top of a view at once.
+ *
+ * The tokens themselves live in lib/map-layers.ts, read back from Xweather's
+ * own URL builder rather than guessed. Guessing them here is what repeatedly
+ * broke the map: a single rejected name fails the whole image.
  */
-const VIEWS: { id: string; label: string; hint: string }[] = [
-  { id: "radar-global", label: "Radar", hint: "Global precipitation radar mosaic" },
-  { id: "satellite", label: "Satellite", hint: "Infrared/visible satellite imagery" },
-  { id: "temperatures", label: "Temperature", hint: "Surface temperature field" },
-  { id: "dew-points", label: "Dew point", hint: "Surface dew point field" },
-  { id: "humidity", label: "Humidity", hint: "Relative humidity field" },
-  { id: "wind-speeds", label: "Wind speed", hint: "Surface wind speed" },
-  { id: "air-quality-index", label: "Air quality", hint: "Air quality index field" },
-  { id: "snow-depth", label: "Snow depth", hint: "Modelled snow on the ground" },
-  { id: "precip-24hr", label: "24h precip", hint: "Accumulated precipitation" },
-];
-
-const OVERLAYS: { id: string; label: string; hint: string }[] = [
-  { id: "alerts", label: "Alerts", hint: "Government watches, warnings and advisories" },
-  { id: "pressure-isobars", label: "Isobars", hint: "Mean sea-level pressure contours" },
-  { id: "stormcells", label: "Storm cells", hint: "Tracked convective cells" },
-  { id: "lightning-strikes-5m-icons", label: "Lightning", hint: "Strikes in the last 5 minutes" },
-  { id: "fires", label: "Wildfires", hint: "Active fire detections" },
-  { id: "tropical-cyclones", label: "Tropical", hint: "Active tropical systems and tracks" },
-];
+import { WEATHER_OVERLAYS as OVERLAYS, WEATHER_VIEWS as VIEWS } from "@/lib/map-layers";
 
 const OFFSETS = [
   { id: "-60minutes", label: "-60m" },
@@ -81,12 +65,28 @@ export function MapPanel({
     };
   }, [playing]);
 
-  // Base and label layers follow the app theme so the map does not sit as a
-  // dark slab in the middle of a light page.
+  /*
+   * Base and label layers follow the app theme so the map does not sit as a
+   * dark slab in the middle of a light page.
+   *
+   * Order is the draw order, and it matters: base, then the bathymetry mask
+   * that shapes the coast, then the opaque view, then sparse overlays, and
+   * place names last so they stay legible on top of everything.
+   */
   const layerParam = useMemo(() => {
-    const base = theme === "dark" ? "flat-dk" : "flat";
-    // "admin" is Xweather's documented combined borders-and-cities overlay.
-    return [base, view, ...overlays, "admin"].filter(Boolean).join(",");
+    const dark = theme === "dark";
+    return [
+      dark ? "flat-dk" : "flat",
+      "water-depth",
+      view,
+      ...overlays,
+      // Tropical tracks are unlabelled without their companion name layer.
+      overlays.includes("tropical-cyclones") ? "tropical-cyclones-names" : "",
+      "countries-outlines",
+      dark ? "admin-cities-dk" : "admin-cities",
+    ]
+      .filter(Boolean)
+      .join(",");
   }, [view, overlays, theme]);
 
   const src = useMemo(() => {

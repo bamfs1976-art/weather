@@ -721,6 +721,61 @@ export function buildMapUrl(options: {
   );
 }
 
+
+/**
+ * Probe a single raster layer against the live maps service.
+ *
+ * Layer codes cannot be verified from source — they depend on what an
+ * account's plan serves, and guessing them has now cost two rounds of
+ * blind fixes. This asks the service directly, one tiny image per layer, so
+ * /api/diagnostics can report exactly which codes work for this key.
+ */
+export async function probeMapLayer(
+  layer: string,
+  lat: number,
+  lon: number
+): Promise<{ layer: string; ok: boolean; status: number | null; detail: string | null }> {
+  // Pair every weather layer with a base so a failure is attributable to the
+  // layer under test rather than to an empty stack.
+  const layers = layer === "flat" ? "flat" : `flat,${layer}`;
+  const url = buildMapUrl({
+    layers,
+    lat: Number(lat.toFixed(3)),
+    lon: Number(lon.toFixed(3)),
+    zoom: 5,
+    width: 100,
+    height: 100,
+    offset: "current",
+  });
+  if (!url) {
+    return { layer, ok: false, status: null, detail: "no credentials" };
+  }
+
+  try {
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (res.ok) {
+      const type = res.headers.get("content-type") ?? "";
+      // A 200 that is not an image means the service answered with an error page.
+      if (!type.startsWith("image/")) {
+        return { layer, ok: false, status: res.status, detail: `content-type ${type}` };
+      }
+      return { layer, ok: true, status: res.status, detail: null };
+    }
+    return { layer, ok: false, status: res.status, detail: `HTTP ${res.status}` };
+  } catch (err) {
+    return {
+      layer,
+      ok: false,
+      status: null,
+      detail:
+        err instanceof Error && err.name === "TimeoutError" ? "timeout" : "unreachable",
+    };
+  }
+}
+
 /* ------------------------------------------------------------------ */
 
 /**

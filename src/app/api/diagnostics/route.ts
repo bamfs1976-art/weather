@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { hasCredentials, resolvePlace, xwFetch } from "@/lib/xweather";
+import { hasCredentials, probeMapLayer, resolvePlace, xwFetch } from "@/lib/xweather";
 import { getFloodWarnings, getMarineConditions, getRiverStations } from "@/lib/water";
+import {
+  BASE_LAYERS,
+  DECORATION_LAYERS,
+  WEATHER_OVERLAYS,
+  WEATHER_VIEWS,
+} from "@/lib/map-layers";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +91,26 @@ export async function GET(request: NextRequest) {
       })()
     : [];
 
+  /*
+   * Raster map layers, probed one at a time. The tokens are all valid names —
+   * what this checks is subscription: the maps service is a separate host that
+   * the data-endpoint checks above never touch, and a plan can serve some
+   * layers while refusing others. Anything listed as broken here should be
+   * taken out of the UI.
+   */
+  const MAP_LAYERS = [
+    ...BASE_LAYERS,
+    ...DECORATION_LAYERS,
+    ...WEATHER_VIEWS.map((option) => option.id),
+    ...WEATHER_OVERLAYS.map((option) => option.id),
+  ];
+
+  const maps = point
+    ? await Promise.all(
+        MAP_LAYERS.map((layer) => probeMapLayer(layer, point.lat, point.lon))
+      )
+    : [];
+
   const all = [...results, ...water];
 
   return NextResponse.json(
@@ -94,6 +120,10 @@ export async function GET(request: NextRequest) {
       available: all.filter((r) => r.ok).map((r) => r.endpoint),
       unavailable: all.filter((r) => !r.ok),
       results: all,
+      maps: {
+        working: maps.filter((m) => m.ok).map((m) => m.layer),
+        broken: maps.filter((m) => !m.ok),
+      },
     },
     { headers: { "Cache-Control": "no-store" } }
   );

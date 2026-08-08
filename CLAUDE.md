@@ -90,6 +90,17 @@ User picks a place (search / geolocation / saved chip)
 - Raster maps come from
   `https://maps.api.xweather.com/{id}_{secret}/{layers}/{w}x{h}/{lat},{lon},{zoom}/{offset}.png`.
   `/api/map` validates the layer list against an allow-list before building it.
+- **Never invent a raster layer token.** They live in `src/lib/map-layers.ts`,
+  which both the proxy route and `MapPanel` import so the two cannot drift.
+  A rejected token fails the *whole* image rather than just its own layer, so
+  one wrong guess takes the map down under every setting. Several obvious
+  guesses are wrong: it is `satellite-geocolor` not `satellite`,
+  `countries-outlines` not `countries`, `fires-obs-points` not `fires`,
+  `lightning-all` not `lightning-strikes-5m-icons`, and
+  `air-quality-index-categories` not `air-quality-index`. To add a layer, get
+  the real token from the Vaisala Xweather MCP server's `xweather_get_raster_maps`
+  tool — it returns a fully built map URL, and the tokens can be read straight
+  out of the path.
 - `GET /api/diagnostics?p=<place>` calls every endpoint above and reports which
   ones the configured key can actually reach — start there when a card is empty.
 - Responses carry both metric and imperial fields, so the unit toggle needs no
