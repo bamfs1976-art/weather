@@ -4,6 +4,7 @@ import { getFloodWarnings, getMarineConditions, getRiverStations } from "@/lib/w
 import {
   BASE_LAYERS,
   DECORATION_LAYERS,
+  MASK_LAYERS,
   WEATHER_OVERLAYS,
   WEATHER_VIEWS,
 } from "@/lib/map-layers";
@@ -100,6 +101,7 @@ export async function GET(request: NextRequest) {
    */
   const MAP_LAYERS = [
     ...BASE_LAYERS,
+    ...MASK_LAYERS,
     ...DECORATION_LAYERS,
     ...WEATHER_VIEWS.map((option) => option.id),
     ...WEATHER_OVERLAYS.map((option) => option.id),
