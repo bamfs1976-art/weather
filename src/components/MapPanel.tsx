@@ -65,6 +65,8 @@ export function MapPanel({
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Set when the server had to drop layers the upstream would not render. */
+  const [droppedLayers, setDroppedLayers] = useState<string[]>([]);
 
   useEffect(() => {
     if (!playing) {
@@ -83,10 +85,8 @@ export function MapPanel({
   // dark slab in the middle of a light page.
   const layerParam = useMemo(() => {
     const base = theme === "dark" ? "flat-dk" : "flat";
-    const admin = theme === "dark" ? "admin-cities-dk" : "admin-cities";
-    return [base, view, ...overlays, admin, "countries"]
-      .filter(Boolean)
-      .join(",");
+    // "admin" is Xweather's documented combined borders-and-cities overlay.
+    return [base, view, ...overlays, "admin"].filter(Boolean).join(",");
   }, [view, overlays, theme]);
 
   const src = useMemo(() => {
@@ -114,6 +114,7 @@ export function MapPanel({
 
     setLoading(true);
     setError(null);
+    setDroppedLayers([]);
 
     (async () => {
       try {
@@ -129,6 +130,14 @@ export function MapPanel({
           if (!cancelled) setError(detail);
           return;
         }
+        const used = res.headers.get("X-Map-Layers");
+        const requested = res.headers.get("X-Map-Requested");
+        if (used && requested && used !== requested) {
+          const kept = new Set(used.split(","));
+          const dropped = requested.split(",").filter((l) => !kept.has(l));
+          if (!cancelled && dropped.length) setDroppedLayers(dropped);
+        }
+
         const blob = await res.blob();
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
@@ -232,8 +241,13 @@ export function MapPanel({
               </Notice>
             </div>
           )}
-          <div className="pointer-events-none absolute bottom-2 left-2">
+          <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap gap-1">
             <Chip tone="accent">{OFFSETS[offsetIndex].label}</Chip>
+            {droppedLayers.length > 0 && (
+              <Chip tone="warn" title="Xweather would not render these layers, so they were dropped">
+                not available: {droppedLayers.join(", ")}
+              </Chip>
+            )}
           </div>
         </div>
 

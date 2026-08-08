@@ -31,7 +31,9 @@ import type {
  * recorded fixtures. Unset in production, where it falls back to the real API.
  */
 const DATA_BASE = process.env.XWEATHER_BASE_URL ?? "https://data.api.xweather.com";
-export const MAPS_BASE = "https://maps.api.xweather.com";
+/* Overridable alongside DATA_BASE so map handling can be tested offline. */
+export const MAPS_BASE =
+  process.env.XWEATHER_MAPS_BASE ?? "https://maps.api.xweather.com";
 
 /** Cache lifetimes (seconds) per class of data. */
 const TTL = {

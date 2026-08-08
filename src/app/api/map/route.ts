@@ -12,14 +12,16 @@ const ALLOWED_LAYERS = new Set([
   "flat",
   "flat-dk",
   "blue-marble",
-  "satellite",
+  "terrain",
+  "terrain-dk",
   "sat-global",
   "water-depth",
-  // overlays
-  "admin-cities",
-  "admin-cities-dk",
-  "admin-states",
-  "admin-states-dk",
+  // administrative overlays. "admin" is the documented combined
+  // borders-and-cities overlay; the invented "admin-cities"/"countries" pair
+  // was rejected upstream, and because it rode on every request it took the
+  // whole map down whatever else was selected.
+  "admin",
+  "admin-dk",
   "countries",
   "counties",
   "states",
@@ -30,10 +32,13 @@ const ALLOWED_LAYERS = new Set([
   "radar",
   "radar-global",
   "alerts",
+  "satellite",
+  "satellite-infrared-color",
+  "satellite-visible",
   "temperatures",
+  "dew-points",
   "wind-speeds",
   "wind-dir",
-  "dew-points",
   "humidity",
   "pressure-isobars",
   "precip",
@@ -51,6 +56,18 @@ const ALLOWED_LAYERS = new Set([
   "tropical-cyclones",
   "visibility",
   "uv-index",
+]);
+
+/** Layers that only decorate — safe to drop if the upstream rejects a stack. */
+const DECORATION = new Set([
+  "admin", "admin-dk", "countries", "counties", "states", "interstates",
+  "roads", "water",
+]);
+
+/** Base maps — at least one of these has to survive for a map to exist. */
+const BASE = new Set([
+  "flat", "flat-dk", "blue-marble", "terrain", "terrain-dk", "sat-global",
+  "water-depth",
 ]);
 
 const OFFSET = /^(current|[+-]\d{1,4}(min|minutes|hour|hours|day|days))$/;
@@ -95,7 +112,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const rawLayers = (params.get("layers") ?? "flat-dk,radar,admin-cities-dk")
+  const rawLayers = (params.get("layers") ?? "flat,radar-global,admin")
     .split(",")
     .map((layer) => layer.trim())
     .filter(Boolean);
@@ -117,51 +134,105 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid time offset." }, { status: 400 });
   }
 
-  const url = buildMapUrl({
-    layers: rawLayers.join(","),
+  const geometry = {
     lat: Number(lat.toFixed(4)),
     lon: Number(lon.toFixed(4)),
     zoom: Math.round(clamp(Number(params.get("zoom")) || 7, 1, 15)),
     width: Math.round(clamp(Number(params.get("w")) || 900, 100, 1600)),
     height: Math.round(clamp(Number(params.get("h")) || 560, 100, 1200)),
     offset,
-  });
+  };
 
-  if (!url) {
-    return NextResponse.json(
-      { error: "Xweather credentials are not configured." },
-      { status: 503 }
-    );
+  /*
+   * Layer names cannot be validated ahead of time — the allow-list only stops
+   * injection, it cannot know which codes this account's plan actually serves.
+   * One bad name previously failed the whole request, and because the admin
+   * overlay rode on every URL, that meant no map at all under any settings.
+   *
+   * So: try the full stack, then progressively simpler ones. Decoration goes
+   * first (borders and labels are the least important), then extra weather
+   * layers, then everything but the base map. The response reports which set
+   * actually rendered so the UI can say what was dropped.
+   */
+  const base = rawLayers.filter((layer) => BASE.has(layer));
+  const weather = rawLayers.filter(
+    (layer) => !BASE.has(layer) && !DECORATION.has(layer)
+  );
+  const fallbackBase = base.length > 0 ? base : ["flat"];
+
+  const candidates: string[][] = [
+    rawLayers,
+    [...base, ...weather],
+    [...fallbackBase, ...weather.slice(0, 1)],
+    fallbackBase,
+  ];
+
+  // Collapse consecutive duplicates so identical stacks aren't tried twice.
+  const attempts: string[][] = [];
+  for (const candidate of candidates) {
+    const key = candidate.join(",");
+    if (key && !attempts.some((a) => a.join(",") === key)) attempts.push(candidate);
   }
 
-  let upstream: Response;
-  try {
-    upstream = await fetch(url, { next: { revalidate: 120 } });
-  } catch {
-    return NextResponse.json(
-      { error: "Could not reach the Xweather maps service." },
-      { status: 502 }
-    );
+  let lastStatus = 0;
+  let lastError = "Could not reach the Xweather maps service.";
+
+  for (const attempt of attempts) {
+    const url = buildMapUrl({ ...geometry, layers: attempt.join(",") });
+    if (!url) {
+      return NextResponse.json(
+        { error: "Xweather credentials are not configured." },
+        { status: 503 }
+      );
+    }
+
+    let upstream: Response;
+    try {
+      upstream = await fetch(url, {
+        next: { revalidate: 120 },
+        signal: AbortSignal.timeout(6_000),
+      });
+    } catch (err) {
+      lastError =
+        err instanceof Error && err.name === "TimeoutError"
+          ? "The Xweather maps service did not respond in time."
+          : "Could not reach the Xweather maps service.";
+      lastStatus = 504;
+      continue;
+    }
+
+    if (upstream.ok) {
+      const body = await upstream.arrayBuffer();
+      const used = attempt.join(",");
+      return new NextResponse(body, {
+        status: 200,
+        headers: {
+          "Content-Type": upstream.headers.get("content-type") ?? "image/png",
+          "Cache-Control": "public, max-age=120",
+          // What actually rendered, so the client can report any downgrade.
+          "X-Map-Layers": used,
+          "X-Map-Requested": rawLayers.join(","),
+        },
+      });
+    }
+
+    lastStatus = upstream.status;
+    lastError =
+      upstream.status === 401
+        ? "Xweather rejected the map credentials (HTTP 401)."
+        : upstream.status === 403
+          ? "Xweather refused the map request (HTTP 403) — raster maps may not be in your subscription."
+          : `Xweather maps returned HTTP ${upstream.status} for layers: ${attempt.join(",")}`;
+
+    // Bad credentials will not improve by simplifying the layer stack.
+    if (upstream.status === 401) break;
   }
 
-  if (!upstream.ok) {
-    return NextResponse.json(
-      {
-        error:
-          upstream.status === 403
-            ? "Xweather refused the map request (HTTP 403) — the credentials are rejected or raster maps are not in your subscription."
-            : `Xweather maps returned HTTP ${upstream.status}.`,
-      },
-      { status: upstream.status === 403 ? 403 : 502 }
-    );
-  }
-
-  const body = await upstream.arrayBuffer();
-  return new NextResponse(body, {
-    status: 200,
-    headers: {
-      "Content-Type": upstream.headers.get("content-type") ?? "image/png",
-      "Cache-Control": "public, max-age=120",
+  return NextResponse.json(
+    {
+      error: lastError,
+      triedLayers: attempts.map((a) => a.join(",")),
     },
-  });
+    { status: lastStatus === 403 || lastStatus === 401 ? lastStatus : 502 }
+  );
 }
