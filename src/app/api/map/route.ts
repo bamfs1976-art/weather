@@ -129,8 +129,17 @@ export async function GET(request: NextRequest) {
 
     let upstream: Response;
     try {
+      /*
+       * Deliberately uncached at this hop. Next's data cache is built for JSON
+       * and stores the body itself; putting PNGs through it on a serverless
+       * host adds a keying layer between the request and the picture, and a
+       * keying layer is exactly what could serve one image for every set of
+       * layers. The response below still carries max-age=120, so the CDN and
+       * the browser do the caching that actually matters — closer to the user
+       * and keyed on the full URL.
+       */
       upstream = await fetch(url, {
-        next: { revalidate: 120 },
+        cache: "no-store",
         signal: AbortSignal.timeout(6_000),
       });
     } catch (err) {
