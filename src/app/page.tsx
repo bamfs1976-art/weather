@@ -8,10 +8,10 @@ import { ForecastPanel } from "@/components/ForecastPanel";
 import { RecentPanel } from "@/components/RecentPanel";
 import { WeatherHistoryPanel } from "@/components/WeatherHistoryPanel";
 import { AirSunPanel } from "@/components/AirSunPanel";
-import { MapPanel } from "@/components/MapPanel";
 import { WaterPanel } from "@/components/WaterPanel";
 import { LocalPanel } from "@/components/LocalPanel";
 import { Logo } from "@/components/Logo";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Notice, Skeleton } from "@/components/ui";
 import { relativeFromNow } from "@/lib/weather-format";
 import type { UnitSystem, WeatherOverview } from "@/lib/weather-types";
@@ -25,7 +25,6 @@ const TABS = [
   { id: "water", label: "Rivers & Tides" },
   { id: "air", label: "Air & Sun" },
   { id: "local", label: "Local" },
-  { id: "map", label: "Maps" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -242,7 +241,11 @@ export default function WeatherPage() {
         {loading && !overview && <LoadingState />}
 
         {overview && (
-          <div key={`${tab}-${overview.place.id}`} className="wx-fade">
+          <ErrorBoundary
+            key={`${tab}-${overview.place.id}`}
+            label={TABS.find((option) => option.id === tab)?.label ?? tab}
+          >
+            <div className="wx-fade">
             {tab === "now" && (
               <NowPanel overview={overview} units={units} hour12={hour12} />
             )}
@@ -271,8 +274,8 @@ export default function WeatherPage() {
             {tab === "local" && place && (
               <LocalPanel placeQuery={place.query} hour12={hour12} />
             )}
-            {tab === "map" && <MapPanel place={overview.place} />}
-          </div>
+            </div>
+          </ErrorBoundary>
         )}
 
         {!overview && !loading && !error && (

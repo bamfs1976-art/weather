@@ -185,6 +185,27 @@ function first<T>(value: T | T[] | null): T | null {
   return value ?? null;
 }
 
+/**
+ * Xweather returns `periods` as a bare object, not an array, when a query
+ * happens to match exactly one period. Every panel maps over `periods`, so an
+ * unguarded response of that shape throws during render and — with no error
+ * boundary above it — unmounts the whole app. Normalise once here rather than
+ * making a dozen call sites defensive.
+ */
+function normalisePeriods<T>(value: T): T {
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  if (!("periods" in record)) return value;
+  const periods = record.periods;
+  if (periods === undefined || periods === null) {
+    return { ...record, periods: [] } as T;
+  }
+  if (!Array.isArray(periods)) {
+    return { ...record, periods: [periods] } as T;
+  }
+  return value;
+}
+
 /** Await a fetch and collapse the one-element result array into an object. */
 async function unwrapFirst<T>(
   pending: Promise<Section<T | T[]>>
@@ -197,7 +218,7 @@ async function unwrapFirst<T>(
   if (value === null) {
     return fail<T>("No data available for this location.", "warn_no_data");
   }
-  return succeed(value);
+  return succeed(normalisePeriods(value));
 }
 
 /* ------------------------------------------------------------------ */

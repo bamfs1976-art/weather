@@ -9,7 +9,7 @@ Weather API. One page, seven views, as much detail as the API will give up.
 
 | View | Contents |
 |------|----------|
-| **Now** | Interpolated current conditions (~25 fields), plain-language narrative, active alerts with expandable full text, minute-by-minute precipitation nowcast for the next hour, nearest reporting station with distance/bearing/QC/flight rule, nearby threats and lightning counts |
+| **Now** | Interpolated current conditions (~25 fields), "next rain" answer, plain-language narrative, active alerts with expandable full text, minute-by-minute precipitation nowcast, nearest reporting station with distance/bearing/QC/flight rule, nearby threats and lightning counts, and the radar map with 15 stackable layers and a −60m → +60m time slider |
 | **Hourly** | 48-hour forecast with six switchable chart metrics — temperature/feels-like/dew point, wind and gusts, precipitation chance and amount, humidity and cloud, pressure, UV and solar radiation — plus a full per-hour breakdown |
 | **10-day** | Daily outlook chart with precipitation bars, expandable per-day detail, and separate day/night periods |
 | **Last 24h** | Observed conditions charted hour by hour, extremes and totals, and the full reading table |
@@ -17,7 +17,6 @@ Weather API. One page, seven views, as much detail as the API will give up.
 | **Air & Sun** | Air quality index with per-pollutant breakdown and a 24-hour forecast; sunrise/sunset/solar noon, all three twilight phases, moon phase and illumination |
 | **Rivers & Tides** | Live river/sea gauge levels against their typical range, flood warnings and alerts, UKHO tide predictions with next high/low, and sea state (wave height, period, swell, sea temperature) |
 | **Local** | Grid carbon intensity for your postcode's region with a 24-hour forecast and generation mix, street-level crime for the surrounding mile, and the local club's league position, fixtures and results |
-| **Maps** | Xweather raster maps with 15 stackable layers (radar, satellite, temperature, isobars, alerts, storm cells, lightning, wildfires, tropical systems and more) and a −60m → +60m time slider |
 
 Throughout: place autocomplete, geolocation, saved places, °C/°F and 12/24-hour
 toggles, and shareable `?p=` URLs.

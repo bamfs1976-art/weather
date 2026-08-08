@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Card, Chip, Meter, Metric, Notice, SectionBody, WindArrow } from "./ui";
 import { SeriesChart } from "./Chart";
+import { MapPanel } from "./MapPanel";
 import {
   clockAt,
   dash,
@@ -456,6 +457,9 @@ export function NowPanel({
           </div>
         </Card>
       </div>
+
+      {/* The map lives on the main view — it is what people look at most. */}
+      <MapPanel place={place} />
     </div>
   );
 }
