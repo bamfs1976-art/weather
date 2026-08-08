@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { hasCredentials, probeMapLayer, resolvePlace, xwFetch } from "@/lib/xweather";
+import {
+  hasCredentials,
+  probeMapLayer,
+  probeMapStack,
+  resolvePlace,
+  xwFetch,
+} from "@/lib/xweather";
 import { getFloodWarnings, getMarineConditions, getRiverStations } from "@/lib/water";
 import {
   BASE_LAYERS,
@@ -113,6 +119,38 @@ export async function GET(request: NextRequest) {
       )
     : [];
 
+  /*
+   * The stacks the map panel actually requests, fingerprinted. The per-layer
+   * probe above pairs each code with a base — two layers — but the UI sends
+   * five, and "every view looks the same" is a claim about whole stacks, not
+   * about individual codes. If these hashes are all equal the service is
+   * serving one picture regardless of what is asked for; if they differ, the
+   * pictures are fine and the fault is in displaying them.
+   */
+  const stackViews = ["radar-global", "satellite-geocolor", "temperatures", "maritime-sst"];
+  const mapStacks = point
+    ? await Promise.all([
+        ...stackViews.map((view) =>
+          probeMapStack(
+            `flat,water-depth,${view},countries-outlines,admin-cities`,
+            point.lat,
+            point.lon,
+            7
+          )
+        ),
+        // Same stack at a different zoom: proves zoom reaches the service.
+        probeMapStack(
+          "flat,water-depth,radar-global,countries-outlines,admin-cities",
+          point.lat,
+          point.lon,
+          9
+        ),
+      ])
+    : [];
+
+  const hashes = mapStacks.filter((s) => s.hash).map((s) => s.hash);
+  const distinctImages = new Set(hashes).size;
+
   const all = [...results, ...water];
 
   return NextResponse.json(
@@ -125,6 +163,21 @@ export async function GET(request: NextRequest) {
       maps: {
         working: maps.filter((m) => m.ok).map((m) => m.layer),
         broken: maps.filter((m) => !m.ok),
+      },
+      mapStacks: {
+        /*
+         * Equal to the number of stacks probed when the service is behaving.
+         * Anything less means separate requests came back byte-identical.
+         */
+        distinctImages,
+        probed: mapStacks.length,
+        verdict:
+          mapStacks.length === 0
+            ? "not probed"
+            : distinctImages === mapStacks.length
+              ? "service returns a different image per stack — any sameness on screen is a display fault"
+              : "service returned identical bytes for different stacks — the fault is upstream, not in the browser",
+        results: mapStacks,
       },
     },
     { headers: { "Cache-Control": "no-store" } }

@@ -723,6 +723,81 @@ export function buildMapUrl(options: {
 
 
 /**
+ * Probe one complete layer stack — exactly what the map panel requests, not a
+ * simplified pair — and fingerprint the bytes that come back.
+ *
+ * The fingerprint is the point. "The map never changes" has two very different
+ * causes: the service returning the same picture whatever it is asked for, or
+ * the browser failing to show a picture that did change. Comparing hashes
+ * across stacks separates the two, which no amount of reading the code can.
+ */
+export async function probeMapStack(
+  layers: string,
+  lat: number,
+  lon: number,
+  zoom: number
+): Promise<{
+  layers: string;
+  zoom: number;
+  ok: boolean;
+  status: number | null;
+  bytes: number | null;
+  hash: string | null;
+  detail: string | null;
+}> {
+  const base = { layers, zoom };
+  const url = buildMapUrl({
+    layers,
+    lat: Number(lat.toFixed(4)),
+    lon: Number(lon.toFixed(4)),
+    zoom,
+    width: 300,
+    height: 200,
+    offset: "current",
+  });
+  if (!url) {
+    return { ...base, ok: false, status: null, bytes: null, hash: null, detail: "no credentials" };
+  }
+
+  try {
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) {
+      return {
+        ...base,
+        ok: false,
+        status: res.status,
+        bytes: null,
+        hash: null,
+        detail:
+          (await res.text().catch(() => "")).slice(0, 160) || `HTTP ${res.status}`,
+      };
+    }
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const { createHash } = await import("node:crypto");
+    return {
+      ...base,
+      ok: true,
+      status: res.status,
+      bytes: buffer.length,
+      hash: createHash("sha1").update(buffer).digest("hex").slice(0, 12),
+      detail: res.headers.get("content-type"),
+    };
+  } catch (err) {
+    return {
+      ...base,
+      ok: false,
+      status: null,
+      bytes: null,
+      hash: null,
+      detail: err instanceof Error ? err.name : "fetch failed",
+    };
+  }
+}
+
+/**
  * Probe a single raster layer against the live maps service.
  *
  * Layer codes cannot be verified from source — they depend on what an
