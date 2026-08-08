@@ -1,9 +1,7 @@
 /**
- * Server-side clients for river levels, flood warnings and tide times.
+ * Server-side clients for river levels, flood warnings and sea state.
  *
- * SERVER ONLY — reads ADMIRALTY_API_KEY.
- *
- * Two upstreams:
+ * Two upstreams, neither of which needs a key:
  *
  *  - Environment Agency real-time flood-monitoring API. Open Government
  *    Licence, no key, no registration. Its flood *warnings* are England-only,
@@ -12,13 +10,11 @@
  *    without anyone signing up for a portal account.
  *    https://environment.data.gov.uk/flood-monitoring/doc/reference
  *
- *  - UKHO ADMIRALTY UK Tidal API. Needs a free "Discovery" subscription key.
- *    This is the authoritative source for UK tide predictions, which matters
- *    in Swansea Bay where the range is among the largest anywhere.
- *    https://admiraltyapi.portal.azure-api.net/
+ *  - Open-Meteo Marine for sea state. 5 km European coastal grid.
+ *    https://open-meteo.com/en/docs/marine-weather-api
  *
- * Both return Section<T> so a missing key or a dead upstream degrades to a
- * notice rather than an exception, exactly like the Xweather sections.
+ * Both return Section<T> so a dead upstream degrades to a notice rather than
+ * an exception, exactly like the Xweather sections.
  */
 
 import type { Section } from "./weather-types";
@@ -28,20 +24,14 @@ import type {
   MarineHour,
   RiverMeasure,
   RiverStation,
-  TidalEvent,
-  TidalStation,
-  TidesPayload,
 } from "./water-types";
 
 const EA_BASE = "https://environment.data.gov.uk/flood-monitoring";
-const ADMIRALTY_BASE = "https://admiraltyapi.azure-api.net/uktidalapi/api/V1";
 const MARINE_BASE = "https://marine-api.open-meteo.com/v1/marine";
 
 const TTL = {
   floods: 300,
   readings: 600,
-  stations: 604_800,
-  tides: 3_600,
   marine: 1_800,
 } as const;
 
@@ -92,9 +82,7 @@ function str(value: unknown): string | null {
 async function getJSON<T>(
   url: string,
   revalidate: number,
-  headers: Record<string, string> = {},
-  /** Keyed sources get a credentials message; open ones must not. */
-  keyed = false
+  headers: Record<string, string> = {}
 ): Promise<Section<T>> {
   let res: Response;
   try {
@@ -110,11 +98,7 @@ async function getJSON<T>(
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
       return fail<T>(
-        keyed
-          ? "The service rejected the API key for this data set."
-          : "The service refused the request (HTTP " +
-            res.status +
-            "). This feed needs no key, so this usually means a network policy or proxy is blocking it.",
+        `The service refused the request (HTTP ${res.status}). These feeds need no key, so a network policy is the likely cause.`,
         "unauthorised"
       );
     }
@@ -362,162 +346,6 @@ export async function getRiverStations(
   }
 
   return succeed(withData);
-}
-
-/* ------------------------------------------------------------------ */
-/* Tides                                                               */
-/* ------------------------------------------------------------------ */
-
-export function hasAdmiraltyKey(): boolean {
-  return Boolean(process.env.ADMIRALTY_API_KEY);
-}
-
-interface RawTidalStationFeature {
-  geometry?: { coordinates?: [number, number] };
-  properties?: { Id?: string; Name?: string; Country?: string };
-}
-
-interface RawTidalEvent {
-  EventType?: string;
-  DateTime?: string;
-  Height?: number;
-  IsApproximateTime?: boolean;
-  IsApproximateHeight?: boolean;
-}
-
-/**
- * Admiralty reports event times in UTC but omits the designator, so a bare
- * "2026-08-08T14:23:00" would otherwise be read as browser-local and land an
- * hour out during BST — which is a serious error for a tide table.
- */
-function toInstant(value: string | null): string | null {
-  if (!value) return null;
-  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value);
-  const iso = hasZone ? value : `${value}Z`;
-  const parsed = Date.parse(iso);
-  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
-}
-
-async function getTidalStations(): Promise<Section<TidalStation[]>> {
-  const key = process.env.ADMIRALTY_API_KEY;
-  if (!key) {
-    return fail<TidalStation[]>(
-      "Tide times need an ADMIRALTY_API_KEY. The Discovery tier is free — sign up at https://admiraltyapi.portal.azure-api.net/.",
-      "no_credentials"
-    );
-  }
-
-  const section = await getJSON<{ features?: RawTidalStationFeature[] }>(
-    `${ADMIRALTY_BASE}/Stations`,
-    TTL.stations,
-    { "Ocp-Apim-Subscription-Key": key },
-    true
-  );
-
-  if (!section.ok || !section.data) {
-    return { ok: false, data: null, error: section.error, code: section.code };
-  }
-
-  const stations: TidalStation[] = (section.data.features ?? [])
-    .map((feature) => {
-      const coords = feature.geometry?.coordinates;
-      return {
-        id: str(feature.properties?.Id) ?? "",
-        name: str(feature.properties?.Name) ?? "Unnamed station",
-        // GeoJSON is [longitude, latitude].
-        lon: Array.isArray(coords) ? num(coords[0]) : null,
-        lat: Array.isArray(coords) ? num(coords[1]) : null,
-        distanceKM: null,
-      };
-    })
-    .filter((station) => station.id !== "");
-
-  if (stations.length === 0) {
-    return fail<TidalStation[]>("No tidal stations returned.", "warn_no_data");
-  }
-
-  return succeed(stations);
-}
-
-export async function getTides(
-  lat: number,
-  lon: number,
-  days = 5,
-  offsetMinutes: number | null = null
-): Promise<Section<TidesPayload>> {
-  const key = process.env.ADMIRALTY_API_KEY;
-  if (!key) {
-    return fail<TidesPayload>(
-      "Tide times need an ADMIRALTY_API_KEY. The Discovery tier is free — sign up at https://admiraltyapi.portal.azure-api.net/.",
-      "no_credentials"
-    );
-  }
-
-  const stationSection = await getTidalStations();
-  if (!stationSection.ok || !stationSection.data) {
-    return {
-      ok: false,
-      data: null,
-      error: stationSection.error,
-      code: stationSection.code,
-    };
-  }
-
-  const nearest = stationSection.data
-    .map((station) => ({
-      ...station,
-      distanceKM:
-        station.lat !== null && station.lon !== null
-          ? distanceKM(lat, lon, station.lat, station.lon)
-          : Number.POSITIVE_INFINITY,
-    }))
-    .sort((a, b) => (a.distanceKM ?? 1e9) - (b.distanceKM ?? 1e9))[0];
-
-  if (!nearest || !Number.isFinite(nearest.distanceKM ?? NaN)) {
-    return fail<TidesPayload>("No tidal station near this location.", "warn_no_data");
-  }
-
-  const eventsSection = await getJSON<RawTidalEvent[]>(
-    `${ADMIRALTY_BASE}/Stations/${encodeURIComponent(nearest.id)}/TidalEvents?duration=${days}`,
-    TTL.tides,
-    { "Ocp-Apim-Subscription-Key": key },
-    true
-  );
-
-  if (!eventsSection.ok || !eventsSection.data) {
-    return {
-      ok: false,
-      data: null,
-      error: eventsSection.error,
-      code: eventsSection.code,
-    };
-  }
-
-  const events: TidalEvent[] = (
-    Array.isArray(eventsSection.data) ? eventsSection.data : []
-  )
-    .map((event) => {
-      const when = toInstant(str(event.DateTime));
-      if (!when) return null;
-      return {
-        type: /high/i.test(event.EventType ?? "") ? "high" : "low",
-        dateTimeISO: withOffset(when, offsetMinutes),
-        heightM: num(event.Height),
-        approximateTime: event.IsApproximateTime === true,
-        approximateHeight: event.IsApproximateHeight === true,
-      } satisfies TidalEvent;
-    })
-    .filter((event): event is TidalEvent => event !== null)
-    .sort((a, b) => a.dateTimeISO.localeCompare(b.dateTimeISO));
-
-  if (events.length === 0) {
-    return fail<TidesPayload>(
-      "The tidal station returned no events for this period.",
-      "warn_no_data"
-    );
-  }
-
-  return succeed({ station: nearest, events });
 }
 
 /* ------------------------------------------------------------------ */

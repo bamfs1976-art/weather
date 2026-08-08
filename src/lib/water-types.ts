@@ -43,28 +43,6 @@ export interface FloodWarning {
   timeRaisedISO: string | null;
 }
 
-export interface TidalStation {
-  id: string;
-  name: string;
-  lat: number | null;
-  lon: number | null;
-  distanceKM: number | null;
-}
-
-export interface TidalEvent {
-  type: "high" | "low";
-  /** Normalised to an absolute instant. Admiralty reports UTC. */
-  dateTimeISO: string;
-  heightM: number | null;
-  approximateTime: boolean;
-  approximateHeight: boolean;
-}
-
-export interface TidesPayload {
-  station: TidalStation;
-  events: TidalEvent[];
-}
-
 export interface MarineHour {
   timeISO: string;
   waveHeightM: number | null;
@@ -87,7 +65,6 @@ export interface WaterPayload {
   sections: {
     floods: Section<FloodWarning[]>;
     rivers: Section<RiverStation[]>;
-    tides: Section<TidesPayload>;
     marine: Section<MarineConditions>;
   };
 }

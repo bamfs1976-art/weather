@@ -15,22 +15,8 @@ import {
 import type {
   MarineConditions,
   RiverStation,
-  TidalEvent,
   WaterPayload,
 } from "@/lib/water-types";
-
-/**
- * Current time as state rather than a Date.now() call during render, so the
- * "next tide" rolls over and the countdowns actually count down.
- */
-function useNow(intervalMs = 30_000): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(timer);
-  }, [intervalMs]);
-  return now;
-}
 
 /** Rivers, flood warnings and tides for the selected place. */
 export function WaterPanel({
@@ -43,7 +29,6 @@ export function WaterPanel({
   const [data, setData] = useState<WaterPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const now = useNow();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,16 +65,13 @@ export function WaterPanel({
   return (
     <div className="space-y-4">
       <FloodBlock data={data} />
-      <TideBlock data={data} hour12={hour12} now={now} />
       <MarineBlock data={data} hour12={hour12} />
       <RiverBlock data={data} hour12={hour12} />
 
       <p className="wx-dim text-xs">
         River levels and flood warnings © Environment Agency, Open Government
         Licence — Welsh gauges in this feed are owned by Natural Resources Wales.
-        Tide predictions © UK Hydrographic Office (ADMIRALTY). Tide times are
-        predictions and do not account for weather or surge. Sea state from
-        Open-Meteo&rsquo;s 5 km European marine model.
+        Sea state from Open-Meteo&rsquo;s 5 km European marine model.
       </p>
     </div>
   );
@@ -157,180 +139,8 @@ function FloodBlock({ data }: { data: WaterPayload }) {
   );
 }
 
-/* ------------------------------------------------------------------ */
 
-function TideBlock({
-  data,
-  hour12,
-  now,
-}: {
-  data: WaterPayload;
-  hour12: boolean;
-  now: number;
-}) {
-  const section = data.sections.tides;
 
-  return (
-    <Card
-      title="Tides"
-      subtitle={
-        section.ok && section.data
-          ? `${section.data.station.name} · ${
-              isNum(section.data.station.distanceKM)
-                ? `${section.data.station.distanceKM.toFixed(0)} km away`
-                : "nearest station"
-            }`
-          : "UKHO ADMIRALTY tide predictions"
-      }
-    >
-      <SectionBody section={section}>
-        {(tides) => {
-          const upcoming = tides.events.filter(
-            (event) => Date.parse(event.dateTimeISO) >= now
-          );
-          const next = upcoming[0] ?? null;
-          const following = upcoming[1] ?? null;
-
-          const highs = tides.events
-            .map((e) => e.heightM)
-            .filter((h): h is number => isNum(h));
-          const range =
-            highs.length > 1 ? Math.max(...highs) - Math.min(...highs) : null;
-
-          return (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <Metric
-                  label={next ? `Next ${next.type} water` : "Next tide"}
-                  icon={next?.type === "high" ? "🌊" : "🏖️"}
-                  value={next ? formatTime(next.dateTimeISO, hour12) : dash}
-                  hint={next ? countdown(next.dateTimeISO, now) : undefined}
-                />
-                <Metric
-                  label="Height"
-                  value={
-                    next && isNum(next.heightM)
-                      ? `${next.heightM.toFixed(1)} m`
-                      : dash
-                  }
-                  hint={next?.approximateHeight ? "approximate" : undefined}
-                />
-                <Metric
-                  label={following ? `Then ${following.type} water` : "Then"}
-                  value={
-                    following ? formatTime(following.dateTimeISO, hour12) : dash
-                  }
-                  hint={following ? countdown(following.dateTimeISO, now) : undefined}
-                />
-                <Metric
-                  label="Range in period"
-                  value={range === null ? dash : `${range.toFixed(1)} m`}
-                  hint="highest to lowest"
-                />
-              </div>
-
-              <TideCurve events={tides.events} hour12={hour12} />
-
-              <div className="wx-scroll -mx-1 px-1">
-                <table className="w-full min-w-[420px] text-sm">
-                  <thead>
-                    <tr className="wx-muted border-b border-[var(--wx-border)] text-left text-xs uppercase tracking-wide">
-                      <th className="py-2 pr-3 font-medium">Day</th>
-                      <th className="py-2 pr-3 font-medium">Tide</th>
-                      <th className="py-2 pr-3 text-right font-medium">Time</th>
-                      <th className="py-2 text-right font-medium">Height</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tides.events.slice(0, 28).map((event, index) => {
-                      const past = Date.parse(event.dateTimeISO) < now;
-                      return (
-                        <tr
-                          key={`${event.dateTimeISO}-${index}`}
-                          className={`border-b border-[var(--wx-border)] last:border-0 ${
-                            past ? "opacity-40" : ""
-                          }`}
-                        >
-                          <td className="py-1.5 pr-3 whitespace-nowrap">
-                            {formatWeekday(event.dateTimeISO)}{" "}
-                            <span className="wx-dim">
-                              {formatDayMonth(event.dateTimeISO)}
-                            </span>
-                          </td>
-                          <td className="py-1.5 pr-3">
-                            <Chip tone={event.type === "high" ? "accent" : "default"}>
-                              {event.type === "high" ? "High" : "Low"}
-                            </Chip>
-                          </td>
-                          <td className="py-1.5 pr-3 text-right font-medium">
-                            {formatTime(event.dateTimeISO, hour12)}
-                            {event.approximateTime && (
-                              <span className="wx-dim"> ~</span>
-                            )}
-                          </td>
-                          <td className="wx-muted py-1.5 text-right">
-                            {isNum(event.heightM)
-                              ? `${event.heightM.toFixed(1)} m`
-                              : dash}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          );
-        }}
-      </SectionBody>
-    </Card>
-  );
-}
-
-/** Tide heights joined into a curve — enough to read the shape of the day. */
-function TideCurve({
-  events,
-  hour12,
-}: {
-  events: TidalEvent[];
-  hour12: boolean;
-}) {
-  const window = events.slice(0, 12);
-  const heights = window.map((event) =>
-    isNum(event.heightM) ? event.heightM : null
-  );
-  if (heights.every((h) => h === null)) return null;
-
-  return (
-    <SeriesChart
-      labels={window.map((event) => formatTime(event.dateTimeISO, hour12))}
-      height={170}
-      series={[
-        {
-          label: "Tide height (m)",
-          color: "#38bdf8",
-          fill: true,
-          values: heights,
-          format: (v) => `${v.toFixed(1)} m`,
-        },
-      ]}
-      yFormat={(v) => v.toFixed(1)}
-      showEvery={2}
-      ariaLabel="Predicted tide heights"
-    />
-  );
-}
-
-function countdown(iso: string, now: number): string {
-  const diff = Date.parse(iso) - now;
-  if (Number.isNaN(diff)) return dash;
-  const minutes = Math.round(diff / 60_000);
-  if (minutes <= 0) return "now";
-  if (minutes < 60) return `in ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest === 0 ? `in ${hours} hr` : `in ${hours} hr ${rest} min`;
-}
 
 /* ------------------------------------------------------------------ */
 

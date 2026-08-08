@@ -3,7 +3,6 @@ import {
   getFloodWarnings,
   getMarineConditions,
   getRiverStations,
-  getTides,
 } from "@/lib/water";
 import { resolvePlace } from "@/lib/xweather";
 import type { WaterPayload } from "@/lib/water-types";
@@ -14,9 +13,8 @@ export const dynamic = "force-dynamic";
  * GET /api/water?p=<location>  (or ?lat=&lon=)
  *
  * River gauges and flood warnings from the Environment Agency's open
- * flood-monitoring feed, plus tide predictions from the UKHO ADMIRALTY API.
- * Each source is a Section, so the rivers still render when there is no
- * Admiralty key, and the tides still render when no gauge is nearby.
+ * flood-monitoring feed, plus sea state from Open-Meteo. Each source is a
+ * Section, so one dead upstream only blanks its own card.
  */
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
@@ -64,17 +62,16 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const [floods, rivers, tides, marine] = await Promise.all([
+  const [floods, rivers, marine] = await Promise.all([
     getFloodWarnings(lat, lon, 30, offsetMinutes),
     getRiverStations(lat, lon, 20, 4, offsetMinutes),
-    getTides(lat, lon, 5, offsetMinutes),
     getMarineConditions(lat, lon, offsetMinutes),
   ]);
 
   const payload: WaterPayload = {
     place: { lat, lon, name },
     fetchedAt: new Date().toISOString(),
-    sections: { floods, rivers, tides, marine },
+    sections: { floods, rivers, marine },
   };
 
   return NextResponse.json(payload, {

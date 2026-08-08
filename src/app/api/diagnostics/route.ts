@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hasCredentials, resolvePlace, xwFetch } from "@/lib/xweather";
-import { getFloodWarnings, getRiverStations, getTides, hasAdmiraltyKey } from "@/lib/water";
+import { getFloodWarnings, getMarineConditions, getRiverStations } from "@/lib/water";
 
 export const dynamic = "force-dynamic";
 
@@ -72,15 +72,15 @@ export async function GET(request: NextRequest) {
 
   const water = point
     ? await (async () => {
-        const [floods, rivers, tides] = await Promise.all([
+        const [floods, rivers, marine] = await Promise.all([
           getFloodWarnings(point.lat, point.lon, 30),
           getRiverStations(point.lat, point.lon, 20, 2),
-          getTides(point.lat, point.lon, 1),
+          getMarineConditions(point.lat, point.lon),
         ]);
         return [
           { endpoint: "EA flood-monitoring: floods", ok: floods.ok, code: floods.code, message: floods.error },
           { endpoint: "EA flood-monitoring: stations + measures", ok: rivers.ok, code: rivers.code, message: rivers.error },
-          { endpoint: "ADMIRALTY UK Tidal API", ok: tides.ok, code: tides.code, message: tides.error },
+          { endpoint: "Open-Meteo Marine", ok: marine.ok, code: marine.code, message: marine.error },
         ];
       })()
     : [];
@@ -90,7 +90,6 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(
     {
       credentials: true,
-      admiraltyKey: hasAdmiraltyKey(),
       location: place,
       available: all.filter((r) => r.ok).map((r) => r.endpoint),
       unavailable: all.filter((r) => !r.ok),
