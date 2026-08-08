@@ -26,7 +26,9 @@ import type {
   RiverStation,
 } from "./water-types";
 
-const EA_BASE = "https://environment.data.gov.uk/flood-monitoring";
+/* Overridable so the EA response handling can be tested offline. */
+const EA_BASE =
+  process.env.EA_BASE_URL ?? "https://environment.data.gov.uk/flood-monitoring";
 const MARINE_BASE = "https://marine-api.open-meteo.com/v1/marine";
 
 const TTL = {
@@ -213,6 +215,13 @@ interface RawStation {
   };
 }
 
+interface RawReading {
+  "@id"?: string;
+  measure?: string;
+  dateTime?: string;
+  value?: number;
+}
+
 interface RawMeasure {
   "@id"?: string;
   parameter?: string;
@@ -297,28 +306,59 @@ export async function getRiverStations(
 
       let measures: RiverMeasure[] = [];
       if (notation) {
-        const measureSection = await getJSON<{ items?: RawMeasure | RawMeasure[] }>(
-          `${EA_BASE}/id/stations/${encodeURIComponent(notation)}/measures`,
-          TTL.readings
-        );
+        /*
+         * Two calls, because the Environment Agency returns `latestReading` as
+         * a URI string rather than an embedded object unless you ask for the
+         * full view. Reading only the object form meant every value came back
+         * null and the panel reported "no gauge is currently reporting" even
+         * though gauges were right there. `readings?latest` gives the values
+         * directly; `measures` gives the metadata (parameter, qualifier, unit)
+         * to label them with.
+         */
+        const [measureSection, readingSection] = await Promise.all([
+          getJSON<{ items?: RawMeasure | RawMeasure[] }>(
+            `${EA_BASE}/id/stations/${encodeURIComponent(notation)}/measures`,
+            TTL.readings
+          ),
+          getJSON<{ items?: RawReading | RawReading[] }>(
+            `${EA_BASE}/id/stations/${encodeURIComponent(notation)}/readings?latest`,
+            TTL.readings
+          ),
+        ]);
+
+        // Latest value per measure URI.
+        const latest = new Map<string, { value: number | null; dateTime: string | null }>();
+        if (readingSection.ok && readingSection.data) {
+          for (const reading of toArray(readingSection.data.items)) {
+            const measureId = str(reading.measure);
+            if (!measureId) continue;
+            latest.set(measureId, {
+              value: num(reading.value),
+              dateTime: str(reading.dateTime),
+            });
+          }
+        }
+
         if (measureSection.ok && measureSection.data) {
           measures = toArray(measureSection.data.items).map((measure) => {
-            const reading =
+            const measureId = str(measure["@id"]) ?? "";
+            // Prefer the embedded object when the API does supply one.
+            const embedded =
               typeof measure.latestReading === "object" && measure.latestReading
                 ? measure.latestReading
                 : undefined;
-            const value = num(reading?.value);
+            const fromReadings = latest.get(measureId);
+            const value = num(embedded?.value) ?? fromReadings?.value ?? null;
+            const when = str(embedded?.dateTime) ?? fromReadings?.dateTime ?? null;
             const { state, rangePosition } = classify(value, low, high);
             return {
-              id: str(measure["@id"]) ?? notation,
+              id: measureId || notation,
               parameter: str(measure.parameter) ?? "level",
               parameterName: str(measure.parameterName) ?? "Water level",
               qualifier: str(measure.qualifier),
               unit: str(measure.unitName),
               value,
-              dateTimeISO: reading?.dateTime
-                ? withOffset(String(reading.dateTime), offsetMinutes)
-                : null,
+              dateTimeISO: when ? withOffset(when, offsetMinutes) : null,
               typicalLow: low,
               typicalHigh: high,
               maxOnRecord: record,
@@ -338,20 +378,25 @@ export async function getRiverStations(
         lat: sLat,
         lon: sLon,
         distanceKM: distance,
-        measures: measures.filter((m) => m.value !== null),
+        measures,
       } satisfies RiverStation;
     })
   );
 
-  const withData = stations.filter((station) => station.measures.length > 0);
-  if (withData.length === 0) {
+  const withMeasures = stations.filter((station) => station.measures.length > 0);
+  if (withMeasures.length === 0) {
     return fail<RiverStation[]>(
-      "Gauges were found nearby but none is currently reporting a level.",
+      "Gauges were found nearby but none publishes a measurement series.",
       "warn_no_data"
     );
   }
 
-  return succeed(withData);
+  /*
+   * Stations with no current value are kept rather than dropped — a gauge that
+   * exists but is briefly silent is worth showing as such, and hiding it made
+   * the whole card look empty when only the readings lookup had failed.
+   */
+  return succeed(withMeasures);
 }
 
 /* ------------------------------------------------------------------ */

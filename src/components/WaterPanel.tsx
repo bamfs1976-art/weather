@@ -260,11 +260,13 @@ function StationCard({
               )}
 
               <div className="wx-dim mt-1 text-[11px]">
-                {measure.dateTimeISO
-                  ? `Read ${formatTime(measure.dateTimeISO, hour12)} · ${relativeFromNow(
-                      measure.dateTimeISO
-                    )}`
-                  : "No timestamp"}
+                {measure.value === null
+                  ? "Not currently reporting"
+                  : measure.dateTimeISO
+                    ? `Read ${formatTime(measure.dateTimeISO, hour12)} · ${relativeFromNow(
+                        measure.dateTimeISO
+                      )}`
+                    : "No timestamp"}
                 {isNum(measure.maxOnRecord) &&
                   ` · record high ${measure.maxOnRecord.toFixed(2)}`}
               </div>
