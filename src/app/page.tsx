@@ -10,6 +10,7 @@ import { WeatherHistoryPanel } from "@/components/WeatherHistoryPanel";
 import { AirSunPanel } from "@/components/AirSunPanel";
 import { MapPanel } from "@/components/MapPanel";
 import { WaterPanel } from "@/components/WaterPanel";
+import { LocalPanel } from "@/components/LocalPanel";
 import { Logo } from "@/components/Logo";
 import { Notice, Skeleton } from "@/components/ui";
 import { relativeFromNow } from "@/lib/weather-format";
@@ -23,6 +24,7 @@ const TABS = [
   { id: "history", label: "History" },
   { id: "water", label: "Rivers & Tides" },
   { id: "air", label: "Air & Sun" },
+  { id: "local", label: "Local" },
   { id: "map", label: "Maps" },
 ] as const;
 
@@ -265,6 +267,9 @@ export default function WeatherPage() {
             )}
             {tab === "air" && (
               <AirSunPanel overview={overview} units={units} hour12={hour12} />
+            )}
+            {tab === "local" && place && (
+              <LocalPanel placeQuery={place.query} hour12={hour12} />
             )}
             {tab === "map" && <MapPanel place={overview.place} />}
           </div>

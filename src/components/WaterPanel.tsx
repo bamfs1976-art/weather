@@ -13,6 +13,7 @@ import {
   relativeFromNow,
 } from "@/lib/weather-format";
 import type {
+  MarineConditions,
   RiverStation,
   TidalEvent,
   WaterPayload,
@@ -80,13 +81,15 @@ export function WaterPanel({
     <div className="space-y-4">
       <FloodBlock data={data} />
       <TideBlock data={data} hour12={hour12} now={now} />
+      <MarineBlock data={data} hour12={hour12} />
       <RiverBlock data={data} hour12={hour12} />
 
       <p className="wx-dim text-xs">
         River levels and flood warnings © Environment Agency, Open Government
         Licence — Welsh gauges in this feed are owned by Natural Resources Wales.
         Tide predictions © UK Hydrographic Office (ADMIRALTY). Tide times are
-        predictions and do not account for weather or surge.
+        predictions and do not account for weather or surge. Sea state from
+        Open-Meteo&rsquo;s 5 km European marine model.
       </p>
     </div>
   );
@@ -437,4 +440,108 @@ function StationCard({
       </div>
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+
+/** Sea state — waves and sea temperature, for the coast rather than the river. */
+function MarineBlock({ data, hour12 }: { data: WaterPayload; hour12: boolean }) {
+  const section = data.sections.marine;
+  // Inland points legitimately have no marine forecast; stay quiet rather than
+  // showing an error for something that was never going to apply.
+  if (!section.ok && section.code === "warn_no_data") return null;
+
+  return (
+    <Card title="Sea state" subtitle="Waves and sea temperature for the next 48 hours">
+      <SectionBody section={section}>
+        {(marine: MarineConditions) => {
+          const current = marine.current;
+          return (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Metric
+                  label="Wave height"
+                  icon="🌊"
+                  value={
+                    isNum(current?.waveHeightM)
+                      ? `${current.waveHeightM.toFixed(1)} m`
+                      : dash
+                  }
+                  hint={describeSea(current?.waveHeightM)}
+                />
+                <Metric
+                  label="Wave period"
+                  value={
+                    isNum(current?.wavePeriodS)
+                      ? `${current.wavePeriodS.toFixed(0)} s`
+                      : dash
+                  }
+                />
+                <Metric
+                  label="Swell"
+                  value={
+                    isNum(current?.swellHeightM)
+                      ? `${current.swellHeightM.toFixed(1)} m`
+                      : dash
+                  }
+                />
+                <Metric
+                  label="Sea temperature"
+                  icon="🌡️"
+                  value={
+                    isNum(current?.seaTempC)
+                      ? `${current.seaTempC.toFixed(1)}°C`
+                      : dash
+                  }
+                />
+              </div>
+
+              {isNum(marine.maxWaveM) && marine.maxWaveAtISO && (
+                <p className="wx-muted text-sm">
+                  Biggest waves in the period: {marine.maxWaveM.toFixed(1)} m
+                  around {formatWeekday(marine.maxWaveAtISO)}{" "}
+                  {formatTime(marine.maxWaveAtISO, hour12)}.
+                </p>
+              )}
+
+              <SeriesChart
+                labels={marine.hours.map((hour) => formatTime(hour.timeISO, hour12))}
+                height={180}
+                series={[
+                  {
+                    label: "Wave height (m)",
+                    color: "#38bdf8",
+                    fill: true,
+                    values: marine.hours.map((hour) => hour.waveHeightM),
+                    format: (v) => `${v.toFixed(1)} m`,
+                  },
+                  {
+                    label: "Sea temp (°C)",
+                    color: "#fb923c",
+                    dashed: true,
+                    values: marine.hours.map((hour) => hour.seaTempC),
+                    format: (v) => `${v.toFixed(1)}°C`,
+                  },
+                ]}
+                yFormat={(v) => v.toFixed(1)}
+                ariaLabel="Forecast wave height and sea temperature"
+              />
+            </div>
+          );
+        }}
+      </SectionBody>
+    </Card>
+  );
+}
+
+/** Douglas-style shorthand for what a wave height actually feels like. */
+function describeSea(waveHeightM: number | null | undefined): string | undefined {
+  if (!isNum(waveHeightM)) return undefined;
+  if (waveHeightM < 0.1) return "Calm";
+  if (waveHeightM < 0.5) return "Smooth";
+  if (waveHeightM < 1.25) return "Slight";
+  if (waveHeightM < 2.5) return "Moderate";
+  if (waveHeightM < 4) return "Rough";
+  if (waveHeightM < 6) return "Very rough";
+  return "High";
 }

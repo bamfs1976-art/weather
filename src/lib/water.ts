@@ -24,6 +24,8 @@
 import type { Section } from "./weather-types";
 import type {
   FloodWarning,
+  MarineConditions,
+  MarineHour,
   RiverMeasure,
   RiverStation,
   TidalEvent,
@@ -33,12 +35,14 @@ import type {
 
 const EA_BASE = "https://environment.data.gov.uk/flood-monitoring";
 const ADMIRALTY_BASE = "https://admiraltyapi.azure-api.net/uktidalapi/api/V1";
+const MARINE_BASE = "https://marine-api.open-meteo.com/v1/marine";
 
 const TTL = {
   floods: 300,
   readings: 600,
   stations: 604_800,
   tides: 3_600,
+  marine: 1_800,
 } as const;
 
 function fail<T>(error: string, code: string | null = null): Section<T> {
@@ -514,4 +518,95 @@ export async function getTides(
   }
 
   return succeed({ station: nearest, events });
+}
+
+/* ------------------------------------------------------------------ */
+/* Sea state (Open-Meteo Marine — free, no key)                        */
+/* ------------------------------------------------------------------ */
+
+interface RawMarine {
+  hourly?: {
+    time?: string[];
+    wave_height?: (number | null)[];
+    wave_direction?: (number | null)[];
+    wave_period?: (number | null)[];
+    swell_wave_height?: (number | null)[];
+    sea_surface_temperature?: (number | null)[];
+  };
+  utc_offset_seconds?: number;
+}
+
+/**
+ * Wave height, period, direction and sea temperature for the next 48 hours.
+ *
+ * Open-Meteo's marine model is a 5 km European grid; it resolves open coast
+ * well but not enclosed water, so a point far inland simply returns nothing
+ * and the card stays hidden.
+ */
+export async function getMarineConditions(
+  lat: number,
+  lon: number,
+  offsetMinutes: number | null = null
+): Promise<Section<MarineConditions>> {
+  const query = new URLSearchParams({
+    latitude: lat.toFixed(4),
+    longitude: lon.toFixed(4),
+    hourly:
+      "wave_height,wave_direction,wave_period,swell_wave_height,sea_surface_temperature",
+    forecast_days: "3",
+    timezone: "UTC",
+  });
+
+  const section = await getJSON<RawMarine>(
+    `${MARINE_BASE}?${query.toString()}`,
+    TTL.marine
+  );
+
+  if (!section.ok || !section.data) {
+    return { ok: false, data: null, error: section.error, code: section.code };
+  }
+
+  const hourly = section.data.hourly;
+  const times = hourly?.time ?? [];
+  if (times.length === 0) {
+    return fail<MarineConditions>(
+      "No marine forecast for this location — the model covers coastal water only.",
+      "warn_no_data"
+    );
+  }
+
+  const at = (list: (number | null)[] | undefined, i: number) =>
+    list && i < list.length ? num(list[i]) : null;
+
+  const hours: MarineHour[] = times.map((time, i) => ({
+    // Open-Meteo returns "2026-08-08T15:00" in the requested zone (UTC here).
+    timeISO: withOffset(`${time}:00Z`.replace(/:00:00Z$/, ":00Z"), offsetMinutes),
+    waveHeightM: at(hourly?.wave_height, i),
+    waveDirectionDeg: at(hourly?.wave_direction, i),
+    wavePeriodS: at(hourly?.wave_period, i),
+    swellHeightM: at(hourly?.swell_wave_height, i),
+    seaTempC: at(hourly?.sea_surface_temperature, i),
+  }));
+
+  const withWave = hours.filter((hour) => hour.waveHeightM !== null);
+  if (withWave.length === 0) {
+    return fail<MarineConditions>(
+      "No marine forecast for this location — the model covers coastal water only.",
+      "warn_no_data"
+    );
+  }
+
+  const now = Date.now();
+  const current =
+    hours.find((hour) => Date.parse(hour.timeISO) >= now) ?? hours[0] ?? null;
+  const peak = withWave.reduce((best, hour) =>
+    (hour.waveHeightM ?? 0) > (best.waveHeightM ?? 0) ? hour : best
+  );
+
+  return succeed({
+    hours: hours.slice(0, 48),
+    current,
+    maxWaveM: peak.waveHeightM,
+    maxWaveAtISO: peak.timeISO,
+  });
 }

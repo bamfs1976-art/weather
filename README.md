@@ -15,7 +15,8 @@ Weather API. One page, seven views, as much detail as the API will give up.
 | **Last 24h** | Observed conditions charted hour by hour, extremes and totals, and the full reading table |
 | **History** | Daily summaries for any date range back to 2001, plotted against 30-year climate normals, with station-reported summaries alongside and a drill-down that reconstructs any past day hour by hour |
 | **Air & Sun** | Air quality index with per-pollutant breakdown and a 24-hour forecast; sunrise/sunset/solar noon, all three twilight phases, moon phase and illumination |
-| **Rivers & Tides** | Live river/sea gauge levels against their typical range, flood warnings and alerts, and UKHO tide predictions with next high/low, a height curve and a multi-day table |
+| **Rivers & Tides** | Live river/sea gauge levels against their typical range, flood warnings and alerts, UKHO tide predictions with next high/low, and sea state (wave height, period, swell, sea temperature) |
+| **Local** | Grid carbon intensity for your postcode's region with a 24-hour forecast and generation mix, street-level crime for the surrounding mile, and the local club's league position, fixtures and results |
 | **Maps** | Xweather raster maps with 15 stackable layers (radar, satellite, temperature, isobars, alerts, storm cells, lightning, wildfires, tropical systems and more) and a −60m → +60m time slider |
 
 Throughout: place autocomplete, geolocation, saved places, °C/°F and 12/24-hour
@@ -41,7 +42,10 @@ toggles, and shareable `?p=` URLs.
 |----------|----------|-------------|
 | `XWEATHER_CLIENT_ID` | yes | Xweather application ID |
 | `XWEATHER_CLIENT_SECRET` | yes | Xweather application secret |
-| `ADMIRALTY_API_KEY` | no | UKHO ADMIRALTY UK Tidal API key for tide times. The [Discovery tier](https://admiraltyapi.portal.azure-api.net/) is free (10,000 calls/month). Without it, the Rivers & Tides tab still shows river levels and flood warnings. |
+| `ADMIRALTY_API_KEY` | no | UKHO ADMIRALTY UK Tidal API key for tide times. The [Discovery tier](https://admiraltyapi.portal.azure-api.net/) is free (10,000 calls/month). Without it, the Rivers & Tides tab still shows river levels, sea state and flood warnings. |
+| `FOOTBALL_DATA_TOKEN` | no | [football-data.org](https://www.football-data.org/client/register) token for fixtures. Without it the rest of the Local tab is unaffected. |
+| `FOOTBALL_TEAM` | no | Club to follow (default `Swansea`). |
+| `FOOTBALL_COMPETITION` | no | Competition code the club plays in (default `ELC`, the Championship). Change this if they move division. |
 
 Both are read server-side only, by `src/lib/xweather.ts`. They never reach the
 browser — even raster map tiles, which carry the credentials in their URL path,
@@ -71,12 +75,14 @@ src/
 │       ├── archive/        # One past day, hour by hour
 │       ├── search/         # Place autocomplete
 │       ├── map/            # Raster map proxy (keeps credentials server-side)
-│       ├── water/          # River levels, flood warnings and tides
+│       ├── water/          # River levels, flood warnings, tides, sea state
+│       ├── local/          # Carbon intensity, crime, football
 │       └── diagnostics/    # Which Xweather endpoints your key unlocks
 ├── components/             # LocationBar, the seven panels, Chart, ui primitives
 └── lib/
     ├── xweather.ts         # SERVER ONLY — the Xweather client
-    ├── water.ts            # SERVER ONLY — Environment Agency + ADMIRALTY
+    ├── water.ts            # SERVER ONLY — Environment Agency, ADMIRALTY, Open-Meteo
+    ├── local.ts            # SERVER ONLY — carbon, police, postcodes, football
     ├── weather-types.ts    # Response types
     └── weather-format.ts   # Client-safe formatting helpers
 ```
@@ -117,6 +123,11 @@ location.
 | [Vaisala Xweather](https://www.xweather.com/) | ID + secret | Everything on the weather tabs |
 | [EA flood-monitoring](https://environment.data.gov.uk/flood-monitoring/doc/reference) | none | River/sea gauges and flood warnings. Open Government Licence. Its flood *warnings* are England-only, but the station feed carries Welsh gauges owned by Natural Resources Wales under the same licence — which is how the Tawe appears without a portal signup |
 | [ADMIRALTY UK Tidal API](https://admiraltyapi.portal.azure-api.net/) | subscription key | Tide predictions for 607 UK stations |
+| [Open-Meteo Marine](https://open-meteo.com/en/docs/marine-weather-api) | none | Wave height, period, swell and sea temperature. 5 km European model — coastal water only, so inland points simply hide the card |
+| [Carbon Intensity](https://carbonintensity.org.uk/) | none | Half-hourly grid carbon for the postcode's DNO region, 24-hour forecast, generation mix. Great Britain only |
+| [data.police.uk](https://data.police.uk/docs/) | none | Street-level crime within a mile, plus the neighbourhood team. England and Wales. Published monthly, roughly two months in arrears |
+| [postcodes.io](https://postcodes.io/) | none | Reverse geocoding lat/lon to a UK postcode, which is what the carbon API is keyed on |
+| [football-data.org](https://www.football-data.org/) | token | Fixtures, results and league position |
 
 ## Notes
 
@@ -130,12 +141,21 @@ location.
   feeds are re-stamped with the selected place's UTC offset before display, so
   a tide at 18:44 BST does not show as 17:44.
 - Tide times are predictions and do not account for weather or storm surge.
+- Police street-level points are anonymised to a nearby location, so they
+  indicate the general area rather than exact addresses.
+- The club is resolved by name within its competition rather than by a
+  hard-coded id, so a change of division shows a clear message instead of
+  silently emptying the card.
 
 ## Attribution
 
 - Weather data © Vaisala Xweather, subject to their terms of service.
 - River levels and flood warnings © Environment Agency, [Open Government Licence](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/); Welsh gauges in that feed are owned by Natural Resources Wales.
 - Tide predictions © UK Hydrographic Office (ADMIRALTY).
+- Sea state from Open-Meteo (CC BY 4.0).
+- Carbon intensity © National Grid ESO, Open Government Licence.
+- Crime data © data.police.uk, Open Government Licence.
+- Fixtures via football-data.org.
 
 The app icon is an original device — a gold double-towered castle over the
 blue-and-white wavy bars of Swansea Bay — inspired by Swansea's civic

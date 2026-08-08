@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFloodWarnings, getRiverStations, getTides } from "@/lib/water";
+import {
+  getFloodWarnings,
+  getMarineConditions,
+  getRiverStations,
+  getTides,
+} from "@/lib/water";
 import { resolvePlace } from "@/lib/xweather";
 import type { WaterPayload } from "@/lib/water-types";
 
@@ -59,16 +64,17 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const [floods, rivers, tides] = await Promise.all([
+  const [floods, rivers, tides, marine] = await Promise.all([
     getFloodWarnings(lat, lon, 30, offsetMinutes),
     getRiverStations(lat, lon, 20, 4, offsetMinutes),
     getTides(lat, lon, 5, offsetMinutes),
+    getMarineConditions(lat, lon, offsetMinutes),
   ]);
 
   const payload: WaterPayload = {
     place: { lat, lon, name },
     fetchedAt: new Date().toISOString(),
-    sections: { floods, rivers, tides },
+    sections: { floods, rivers, tides, marine },
   };
 
   return NextResponse.json(payload, {

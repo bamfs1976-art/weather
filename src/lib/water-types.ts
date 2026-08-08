@@ -65,6 +65,22 @@ export interface TidesPayload {
   events: TidalEvent[];
 }
 
+export interface MarineHour {
+  timeISO: string;
+  waveHeightM: number | null;
+  waveDirectionDeg: number | null;
+  wavePeriodS: number | null;
+  swellHeightM: number | null;
+  seaTempC: number | null;
+}
+
+export interface MarineConditions {
+  hours: MarineHour[];
+  current: MarineHour | null;
+  maxWaveM: number | null;
+  maxWaveAtISO: string | null;
+}
+
 export interface WaterPayload {
   place: { lat: number; lon: number; name: string };
   fetchedAt: string;
@@ -72,5 +88,6 @@ export interface WaterPayload {
     floods: Section<FloodWarning[]>;
     rivers: Section<RiverStation[]>;
     tides: Section<TidesPayload>;
+    marine: Section<MarineConditions>;
   };
 }
