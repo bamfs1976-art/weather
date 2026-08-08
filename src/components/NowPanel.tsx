@@ -28,16 +28,18 @@ import {
   weatherEmoji,
   windDescription,
 } from "@/lib/weather-format";
-import type { UnitSystem, WeatherOverview } from "@/lib/weather-types";
+import type { ThemeName, UnitSystem, WeatherOverview } from "@/lib/weather-types";
 
 export function NowPanel({
   overview,
   units,
   hour12,
+  theme = "light",
 }: {
   overview: WeatherOverview;
   units: UnitSystem;
   hour12: boolean;
+  theme?: ThemeName;
 }) {
   const { sections, place } = overview;
   const current = sections.current.data?.periods?.[0] ?? null;
@@ -83,7 +85,7 @@ export function NowPanel({
                     </div>
                     <div className="wx-muted mt-1 text-sm">
                       Feels like{" "}
-                      <span className="text-slate-200">
+                      <span className="text-[var(--wx-text)]">
                         {formatTemp(current.feelslikeC, current.feelslikeF, units)}
                       </span>
                     </div>
@@ -133,7 +135,7 @@ export function NowPanel({
             )}
 
             {sections.phrase.data?.periods?.[0]?.text && (
-              <p className="wx-muted mt-4 border-l-2 border-sky-400/40 pl-3 text-sm leading-relaxed">
+              <p className="wx-muted mt-4 border-l-2 border-[var(--wx-accent-border)] pl-3 text-sm leading-relaxed">
                 {sections.phrase.data.periods[0].text}
               </p>
             )}
@@ -392,7 +394,7 @@ export function NowPanel({
             <SectionBody section={sections.threats} empty="No threat data.">
               {(threats) =>
                 threats.length === 0 ? (
-                  <p className="text-sm text-emerald-300/90">
+                  <p className="text-sm wx-good-text">
                     No active weather threats near this location.
                   </p>
                 ) : (
@@ -459,7 +461,7 @@ export function NowPanel({
       </div>
 
       {/* The map lives on the main view — it is what people look at most. */}
-      <MapPanel place={place} />
+      <MapPanel place={place} theme={theme} />
     </div>
   );
 }
@@ -695,7 +697,7 @@ function AlertsBlock({
               <span className="wx-muted shrink-0 text-sm">{isOpen ? "▲" : "▼"}</span>
             </button>
             {isOpen && (details.bodyFull || details.body) && (
-              <pre className="wx-muted max-h-96 overflow-auto whitespace-pre-wrap border-t border-slate-400/15 px-4 py-3 text-xs leading-relaxed">
+              <pre className="wx-muted max-h-96 overflow-auto whitespace-pre-wrap border-t border-[var(--wx-border)] px-4 py-3 text-xs leading-relaxed">
                 {details.bodyFull ?? details.body}
               </pre>
             )}

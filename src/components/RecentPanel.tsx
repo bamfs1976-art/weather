@@ -154,7 +154,7 @@ export function RecentPanel({
             <div className="wx-scroll -mx-1 px-1">
               <table className="w-full min-w-[720px] text-sm">
                 <thead>
-                  <tr className="wx-muted border-b border-slate-400/20 text-left text-xs uppercase tracking-wide">
+                  <tr className="wx-muted border-b border-[var(--wx-border)] text-left text-xs uppercase tracking-wide">
                     <th className="py-2 pr-3 font-medium">Time</th>
                     <th className="py-2 pr-3 font-medium">Conditions</th>
                     <th className="py-2 pr-3 text-right font-medium">Temp</th>
@@ -171,7 +171,7 @@ export function RecentPanel({
                   {[...(data.periods ?? [])].reverse().map((period, index) => (
                     <tr
                       key={period.dateTimeISO ?? index}
-                      className="border-b border-slate-400/10 last:border-0"
+                      className="border-b border-[var(--wx-border)] last:border-0"
                     >
                       <td className="py-1.5 pr-3 whitespace-nowrap">
                         {formatHourLabel(period.dateTimeISO, hour12)}

@@ -93,7 +93,7 @@ export function ForecastPanel({
             const spanMin = lows.length ? Math.min(...lows) : 0;
 
             return (
-              <ul className="divide-y divide-slate-400/10">
+              <ul className="divide-y divide-[var(--wx-border)]">
                 {periods.map((period, index) => {
                   const iso = period.dateTimeISO ?? period.validTime ?? "";
                   const high = tempValue(period.maxTempC, period.maxTempF, units);
@@ -103,7 +103,7 @@ export function ForecastPanel({
                     <li key={iso || index}>
                       <button
                         type="button"
-                        className="flex w-full items-center gap-3 py-2.5 text-left hover:bg-white/5"
+                        className="flex w-full items-center gap-3 py-2.5 text-left wx-hover"
                         onClick={() => setOpenDay(isOpen ? null : index)}
                         aria-expanded={isOpen}
                       >
@@ -121,7 +121,7 @@ export function ForecastPanel({
                         <span className="wx-muted hidden min-w-0 flex-1 truncate text-sm sm:block">
                           {period.weather ?? period.weatherPrimary ?? dash}
                         </span>
-                        <span className="w-14 shrink-0 text-right text-xs text-sky-300">
+                        <span className="w-14 shrink-0 text-right text-xs wx-cold">
                           {isNum(period.pop) && period.pop > 0
                             ? `☔ ${period.pop}%`
                             : ""}
@@ -239,13 +239,13 @@ function TempBar({
   scaleMax: number;
 }) {
   if (low === null || high === null || scaleMax === scaleMin) {
-    return <span className="h-1.5 flex-1 rounded-full bg-slate-500/20" />;
+    return <span className="h-1.5 flex-1 rounded-full wx-track" />;
   }
   const range = scaleMax - scaleMin;
   const left = ((low - scaleMin) / range) * 100;
   const width = Math.max(4, ((high - low) / range) * 100);
   return (
-    <span className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-slate-500/20">
+    <span className="relative h-1.5 flex-1 overflow-hidden rounded-full wx-track">
       <span
         className="absolute inset-y-0 rounded-full"
         style={{

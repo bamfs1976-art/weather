@@ -18,8 +18,13 @@ Weather API. One page, seven views, as much detail as the API will give up.
 | **Rivers & Tides** | Live river/sea gauge levels against their typical range, flood warnings and alerts, UKHO tide predictions with next high/low, and sea state (wave height, period, swell, sea temperature) |
 | **Local** | Grid carbon intensity for your postcode's region with a 24-hour forecast and generation mix, street-level crime for the surrounding mile, and the local club's league position, fixtures and results |
 
-Throughout: place autocomplete, geolocation, saved places, °C/°F and 12/24-hour
-toggles, and shareable `?p=` URLs.
+Throughout: place autocomplete, geolocation, saved places, °C/°F, 12/24-hour and
+light/dark toggles, and shareable `?p=` URLs.
+
+The app is light by default with a dark toggle. The choice persists and is
+applied before first paint, so there is no flash of the wrong theme. Colours
+come from CSS custom properties on `.wx`, so one `data-theme` attribute flips
+the whole app — including the raster map's base layer.
 
 ## Getting started
 

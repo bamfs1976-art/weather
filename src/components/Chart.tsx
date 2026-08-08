@@ -160,7 +160,7 @@ export function SeriesChart({
               x2={width - padR}
               y1={y(value)}
               y2={y(value)}
-              stroke="rgba(148,163,184,0.16)"
+              stroke="var(--wx-chart-grid)"
               strokeWidth="1"
             />
             <text
@@ -168,7 +168,7 @@ export function SeriesChart({
               y={y(value) + 3.5}
               textAnchor="end"
               fontSize="11"
-              fill="rgba(148,163,184,0.85)"
+              fill="var(--wx-chart-text)"
             >
               {yFormat(value)}
             </text>
@@ -224,7 +224,7 @@ export function SeriesChart({
               y={height - 8}
               textAnchor="middle"
               fontSize="11"
-              fill="rgba(148,163,184,0.85)"
+              fill="var(--wx-chart-text)"
             >
               {label}
             </text>
@@ -240,7 +240,7 @@ export function SeriesChart({
             width={plotW / Math.max(count, 1)}
             height={plotH}
             fill="transparent"
-            className="hover:fill-white/5"
+            className="hover:fill-[var(--wx-hover)]"
           >
             <title>
               {[

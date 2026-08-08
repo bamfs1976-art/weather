@@ -98,7 +98,7 @@ export function HourlyPanel({
                       type="button"
                       onClick={() => setExpanded(isOpen ? null : index)}
                       className={`wx-inset wx-card-hover w-[104px] shrink-0 px-2.5 py-3 text-center transition ${
-                        isOpen ? "ring-1 ring-sky-400/60" : ""
+                        isOpen ? "ring-1 ring-[var(--wx-accent-border)]" : ""
                       }`}
                     >
                       <div className="wx-muted text-[11px]">
@@ -366,7 +366,7 @@ function HourDetail({
       </div>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
         {rows.map(([label, value]) => (
-          <div key={label} className="flex justify-between gap-3 border-b border-slate-400/10 py-1">
+          <div key={label} className="flex justify-between gap-3 border-b border-[var(--wx-border)] py-1">
             <dt className="wx-muted">{label}</dt>
             <dd className="text-right font-medium">{value}</dd>
           </div>

@@ -17,51 +17,112 @@ body {
 }
 
 /*
- * The whole app is themed through .wx, which sits on <body>. Keeping the
- * namespace means every component's class names stay stable and the theme can
- * be dropped into another shell without collisions.
+ * The whole app is themed through .wx on <body>. Light is the default; dark is
+ * opt-in via data-theme="dark" on <html>, set before first paint by the inline
+ * script in layout.tsx so there is no flash of the wrong theme.
+ *
+ * Components reference these tokens rather than fixed Tailwind colours, which
+ * is what lets one attribute flip the entire app.
  */
 
 .wx {
-  --wx-bg: #070d1b;
-  --wx-bg-2: #0d1628;
-  --wx-surface: rgba(255, 255, 255, 0.05);
-  --wx-surface-strong: rgba(255, 255, 255, 0.09);
-  --wx-border: rgba(148, 163, 184, 0.18);
-  --wx-border-strong: rgba(148, 163, 184, 0.32);
-  --wx-text: #e6edf7;
-  --wx-muted: #94a3b8;
-  --wx-dim: #64748b;
-  --wx-accent: #38bdf8;
-  --wx-accent-2: #818cf8;
-  --wx-warn: #f59e0b;
-  --wx-danger: #ef4444;
-  --wx-good: #34d399;
+  /* --- light (default) --- */
+  --wx-bg: #eef3fb;
+  --wx-bg-2: #f7fafe;
+  --wx-surface: rgba(255, 255, 255, 0.78);
+  --wx-surface-strong: #ffffff;
+  --wx-inset: rgba(255, 255, 255, 0.72);
+  --wx-border: rgba(15, 32, 87, 0.12);
+  --wx-border-strong: rgba(15, 32, 87, 0.26);
+  --wx-hover: rgba(15, 32, 87, 0.05);
+
+  --wx-text: #10204d;
+  --wx-muted: #4d5f80;
+  --wx-dim: #74839f;
+
+  --wx-accent: #0369a1;
+  --wx-accent-bg: rgba(3, 105, 161, 0.12);
+  --wx-accent-border: rgba(3, 105, 161, 0.4);
+  --wx-accent-text: #075985;
+
+  --wx-good: #047857;
+  --wx-good-bg: rgba(4, 120, 87, 0.1);
+  --wx-warn: #b45309;
+  --wx-warn-bg: rgba(180, 83, 9, 0.1);
+  --wx-danger: #b91c1c;
+  --wx-danger-bg: rgba(185, 28, 28, 0.1);
+
+  --wx-hot: #c2410c;
+  --wx-cold: #0369a1;
+
+  --wx-chart-grid: rgba(15, 32, 87, 0.13);
+  --wx-chart-text: rgba(16, 32, 77, 0.7);
+  --wx-track: rgba(15, 32, 87, 0.12);
+  --wx-skeleton: rgba(15, 32, 87, 0.1);
+  --wx-shadow: 0 1px 2px rgba(15, 32, 87, 0.06), 0 8px 24px rgba(15, 32, 87, 0.06);
 
   min-height: 100vh;
   color: var(--wx-text);
-  /* The gradients are sized to the element, not the viewport, so the dark
-     ground covers the whole document however long the page grows. */
-  background-color: #050912;
+  background-color: var(--wx-bg);
   background-image:
-    radial-gradient(1200px 600px at 12% -10%, rgba(56, 189, 248, 0.16), transparent 60%),
-    radial-gradient(1000px 500px at 88% 0%, rgba(129, 140, 248, 0.14), transparent 55%),
-    linear-gradient(180deg, var(--wx-bg-2) 0%, var(--wx-bg) 900px, #050912 1600px);
+    radial-gradient(1200px 600px at 12% -10%, rgba(3, 105, 161, 0.1), transparent 60%),
+    radial-gradient(1000px 500px at 88% 0%, rgba(99, 102, 241, 0.08), transparent 55%),
+    linear-gradient(180deg, var(--wx-bg-2) 0%, var(--wx-bg) 900px);
   background-repeat: no-repeat;
   font-variant-numeric: tabular-nums;
 
-  /* viewport-fit=cover lets the background reach the screen edges; these keep
-     content clear of the notch and home indicator in iOS standalone mode. */
   padding-top: env(safe-area-inset-top);
   padding-right: env(safe-area-inset-right);
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
 }
 
+:root[data-theme="dark"] .wx {
+  --wx-bg: #070d1b;
+  --wx-bg-2: #0d1628;
+  --wx-surface: rgba(255, 255, 255, 0.05);
+  --wx-surface-strong: rgba(255, 255, 255, 0.09);
+  --wx-inset: rgba(4, 10, 22, 0.45);
+  --wx-border: rgba(148, 163, 184, 0.18);
+  --wx-border-strong: rgba(148, 163, 184, 0.32);
+  --wx-hover: rgba(255, 255, 255, 0.06);
+
+  --wx-text: #e6edf7;
+  --wx-muted: #94a3b8;
+  --wx-dim: #64748b;
+
+  --wx-accent: #38bdf8;
+  --wx-accent-bg: rgba(56, 189, 248, 0.16);
+  --wx-accent-border: rgba(56, 189, 248, 0.55);
+  --wx-accent-text: #e0f2fe;
+
+  --wx-good: #34d399;
+  --wx-good-bg: rgba(52, 211, 153, 0.12);
+  --wx-warn: #f59e0b;
+  --wx-warn-bg: rgba(245, 158, 11, 0.1);
+  --wx-danger: #ef4444;
+  --wx-danger-bg: rgba(239, 68, 68, 0.1);
+
+  --wx-hot: #fb923c;
+  --wx-cold: #60a5fa;
+
+  --wx-chart-grid: rgba(148, 163, 184, 0.16);
+  --wx-chart-text: rgba(148, 163, 184, 0.85);
+  --wx-track: rgba(148, 163, 184, 0.25);
+  --wx-skeleton: rgba(148, 163, 184, 0.18);
+  --wx-shadow: none;
+
+  background-image:
+    radial-gradient(1200px 600px at 12% -10%, rgba(56, 189, 248, 0.16), transparent 60%),
+    radial-gradient(1000px 500px at 88% 0%, rgba(129, 140, 248, 0.14), transparent 55%),
+    linear-gradient(180deg, var(--wx-bg-2) 0%, var(--wx-bg) 900px, #050912 1600px);
+}
+
 .wx-card {
   background: var(--wx-surface);
   border: 1px solid var(--wx-border);
   border-radius: 1rem;
+  box-shadow: var(--wx-shadow);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
@@ -72,7 +133,7 @@ body {
 }
 
 .wx-inset {
-  background: rgba(4, 10, 22, 0.45);
+  background: var(--wx-inset);
   border: 1px solid var(--wx-border);
   border-radius: 0.75rem;
 }
@@ -85,25 +146,52 @@ body {
   color: var(--wx-dim);
 }
 
-/* Horizontal scrollers (hourly strip, day cards) */
+.wx-hot {
+  color: var(--wx-hot);
+}
+
+.wx-cold {
+  color: var(--wx-cold);
+}
+
+.wx-good-text {
+  color: var(--wx-good);
+}
+
+/* Row / cell separators and hover states, so components don't hard-code greys */
+.wx-border {
+  border-color: var(--wx-border);
+}
+
+.wx-divide > * + * {
+  border-top: 1px solid var(--wx-border);
+}
+
+.wx-hover:hover {
+  background: var(--wx-hover);
+}
+
+.wx-track {
+  background: var(--wx-track);
+}
+
 .wx-scroll {
   overflow-x: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+  scrollbar-color: var(--wx-border-strong) transparent;
 }
 .wx-scroll::-webkit-scrollbar {
   height: 8px;
   width: 8px;
 }
 .wx-scroll::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.4);
+  background: var(--wx-border-strong);
   border-radius: 4px;
 }
 .wx-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* Native form controls need coaxing onto a dark background */
 .wx input,
 .wx select,
 .wx button,
@@ -112,13 +200,16 @@ body {
   font: inherit;
 }
 
-.wx input[type="date"]::-webkit-calendar-picker-indicator {
+:root[data-theme="dark"] .wx input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(0.8);
+  cursor: pointer;
+}
+.wx input[type="date"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
 }
 
 .wx-field {
-  background: rgba(4, 10, 22, 0.6);
+  background: var(--wx-surface-strong);
   border: 1px solid var(--wx-border);
   border-radius: 0.6rem;
   padding: 0.5rem 0.75rem;
@@ -126,11 +217,9 @@ body {
 }
 .wx-field:focus {
   border-color: var(--wx-accent);
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+  box-shadow: 0 0 0 3px var(--wx-accent-bg);
 }
 
-/* weather.css loads after Tailwind, so .wx-field's padding shorthand would
-   otherwise beat a pl-* utility on the search input. */
 .wx-field-search {
   padding-left: 2.25rem;
 }
@@ -152,9 +241,9 @@ body {
   cursor: not-allowed;
 }
 .wx-btn-active {
-  background: rgba(56, 189, 248, 0.16);
-  border-color: rgba(56, 189, 248, 0.55);
-  color: #e0f2fe;
+  background: var(--wx-accent-bg);
+  border-color: var(--wx-accent-border);
+  color: var(--wx-accent-text);
 }
 
 @keyframes wx-fade-in {
@@ -176,7 +265,7 @@ body {
   50% { opacity: 0.75; }
 }
 .wx-skeleton {
-  background: rgba(148, 163, 184, 0.18);
+  background: var(--wx-skeleton);
   border-radius: 0.5rem;
   animation: wx-pulse 1.4s ease-in-out infinite;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { PlaceSuggestion, UnitSystem } from "@/lib/weather-types";
+import type { PlaceSuggestion, ThemeName, UnitSystem } from "@/lib/weather-types";
 
 export interface SavedPlace {
   query: string;
@@ -13,10 +13,12 @@ export function LocationBar({
   favorites,
   units,
   hour12,
+  theme,
   loading,
   onSelect,
   onUnitsChange,
   onHour12Change,
+  onThemeChange,
   onToggleFavorite,
   onRefresh,
   lastUpdated,
@@ -25,10 +27,12 @@ export function LocationBar({
   favorites: SavedPlace[];
   units: UnitSystem;
   hour12: boolean;
+  theme: ThemeName;
   loading: boolean;
   onSelect: (place: SavedPlace) => void;
   onUnitsChange: (units: UnitSystem) => void;
   onHour12Change: (hour12: boolean) => void;
+  onThemeChange: (theme: ThemeName) => void;
   onToggleFavorite: () => void;
   onRefresh: () => void;
   lastUpdated: string | null;
@@ -188,7 +192,7 @@ export function LocationBar({
                     onMouseEnter={() => setHighlight(index)}
                     onClick={() => choose(suggestion)}
                     className={`flex w-full items-baseline justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm ${
-                      index === highlight ? "bg-white/10" : "hover:bg-white/5"
+                      index === highlight ? "bg-[var(--wx-hover)]" : "wx-hover"
                     }`}
                   >
                     <span className="truncate">{suggestion.displayName}</span>
@@ -216,14 +220,14 @@ export function LocationBar({
             {isFavorite ? "★ Saved" : "☆ Save"}
           </button>
 
-          <div className="flex overflow-hidden rounded-lg border border-slate-400/20">
+          <div className="flex overflow-hidden rounded-lg border border-[var(--wx-border)]">
             {(["metric", "imperial"] as UnitSystem[]).map((option) => (
               <button
                 key={option}
                 type="button"
                 onClick={() => onUnitsChange(option)}
                 className={`px-3 py-2 text-sm ${
-                  units === option ? "bg-sky-400/20 text-sky-100" : "hover:bg-white/5"
+                  units === option ? "bg-[var(--wx-accent-bg)] text-[var(--wx-accent-text)]" : "wx-hover"
                 }`}
               >
                 {option === "metric" ? "°C" : "°F"}
@@ -243,6 +247,16 @@ export function LocationBar({
           <button
             type="button"
             className="wx-btn text-sm"
+            onClick={() => onThemeChange(theme === "dark" ? "light" : "dark")}
+            aria-pressed={theme === "dark"}
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
+          </button>
+
+          <button
+            type="button"
+            className="wx-btn text-sm"
             onClick={onRefresh}
             disabled={loading}
           >
@@ -252,7 +266,7 @@ export function LocationBar({
       </div>
 
       {(favorites.length > 0 || geoError || lastUpdated) && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-400/15 pt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--wx-border)] pt-3">
           {favorites.map((favorite) => (
             <button
               key={favorite.query}
@@ -266,7 +280,7 @@ export function LocationBar({
             </button>
           ))}
           {geoError && (
-            <span className="text-xs text-amber-300/90">{geoError}</span>
+            <span className="text-xs text-[var(--wx-warn)]">{geoError}</span>
           )}
           {lastUpdated && (
             <span className="wx-dim ml-auto text-xs">

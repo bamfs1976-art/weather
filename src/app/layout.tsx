@@ -16,7 +16,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#070d1b",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#eef3fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#070d1b" },
+  ],
   // viewportFit: cover lets the dark background run under the notch and home
   // indicator when launched from the iOS home screen.
   viewportFit: "cover",
@@ -24,11 +27,21 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+/*
+ * Runs before first paint: applies a stored dark-mode choice to <html> so the
+ * page never flashes light before React hydrates. Light is the default, so
+ * doing nothing is the correct behaviour for a first-time visitor.
+ */
+const THEME_SCRIPT = `try{var t=localStorage.getItem("wx:theme");if(t==="dark")document.documentElement.dataset.theme="dark";}catch(e){}`;
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       {/* .wx carries the whole theme — see globals.css */}
       <body className="wx">{children}</body>
     </html>

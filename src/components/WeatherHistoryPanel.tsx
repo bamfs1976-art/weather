@@ -327,7 +327,7 @@ export function WeatherHistoryPanel({
                 <div className="wx-scroll -mx-1 px-1">
                   <table className="w-full min-w-[720px] text-sm">
                     <thead>
-                      <tr className="wx-muted border-b border-slate-400/20 text-left text-xs uppercase tracking-wide">
+                      <tr className="wx-muted border-b border-[var(--wx-border)] text-left text-xs uppercase tracking-wide">
                         <th className="py-2 pr-3 font-medium">Date</th>
                         <th className="py-2 pr-3 font-medium">Conditions</th>
                         <th className="py-2 pr-3 text-right font-medium">High</th>
@@ -346,8 +346,8 @@ export function WeatherHistoryPanel({
                           <tr
                             key={date || index}
                             onClick={() => date && openDay(date)}
-                            className={`cursor-pointer border-b border-slate-400/10 last:border-0 hover:bg-white/5 ${
-                              isOpen ? "bg-white/5" : ""
+                            className={`cursor-pointer border-b border-[var(--wx-border)] last:border-0 wx-hover ${
+                              isOpen ? "bg-[var(--wx-hover)]" : ""
                             }`}
                           >
                             <td className="py-1.5 pr-3 whitespace-nowrap font-medium">
@@ -359,10 +359,10 @@ export function WeatherHistoryPanel({
                               </span>
                               {period.weatherPrimary ?? period.weather ?? dash}
                             </td>
-                            <td className="py-1.5 pr-3 text-right font-medium text-orange-300">
+                            <td className="py-1.5 pr-3 text-right font-medium wx-hot">
                               {formatTemp(period.maxTempC, period.maxTempF, units)}
                             </td>
-                            <td className="py-1.5 pr-3 text-right text-sky-300">
+                            <td className="py-1.5 pr-3 text-right wx-cold">
                               {formatTemp(period.minTempC, period.minTempF, units)}
                             </td>
                             <td className="wx-muted py-1.5 pr-3 text-right">
@@ -423,7 +423,7 @@ export function WeatherHistoryPanel({
                 <div className="wx-scroll -mx-1 px-1">
                   <table className="w-full min-w-[560px] text-sm">
                     <thead>
-                      <tr className="wx-muted border-b border-slate-400/20 text-left text-xs uppercase tracking-wide">
+                      <tr className="wx-muted border-b border-[var(--wx-border)] text-left text-xs uppercase tracking-wide">
                         <th className="py-2 pr-3 font-medium">Date</th>
                         <th className="py-2 pr-3 text-right font-medium">High</th>
                         <th className="py-2 pr-3 text-right font-medium">Low</th>
@@ -436,7 +436,7 @@ export function WeatherHistoryPanel({
                         (period, index) => (
                           <tr
                             key={period.dateTimeISO ?? index}
-                            className="border-b border-slate-400/10 last:border-0"
+                            className="border-b border-[var(--wx-border)] last:border-0"
                           >
                             <td className="py-1.5 pr-3">
                               {formatDayMonth(period.dateTimeISO)}
@@ -628,7 +628,7 @@ function ArchiveDay({
       <div className="wx-scroll -mx-1 px-1">
         <table className="w-full min-w-[640px] text-sm">
           <thead>
-            <tr className="wx-muted border-b border-slate-400/20 text-left text-xs uppercase tracking-wide">
+            <tr className="wx-muted border-b border-[var(--wx-border)] text-left text-xs uppercase tracking-wide">
               <th className="py-2 pr-3 font-medium">Time</th>
               <th className="py-2 pr-3 font-medium">Conditions</th>
               <th className="py-2 pr-3 text-right font-medium">Temp</th>
@@ -643,7 +643,7 @@ function ArchiveDay({
             {hourly.map((period, index) => (
               <tr
                 key={period.dateTimeISO ?? index}
-                className="border-b border-slate-400/10 last:border-0"
+                className="border-b border-[var(--wx-border)] last:border-0"
               >
                 <td className="py-1.5 pr-3 whitespace-nowrap">
                   {formatHourLabel(period.dateTimeISO, hour12)}

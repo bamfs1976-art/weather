@@ -70,10 +70,10 @@ export function Notice({
 }) {
   const color =
     tone === "warn"
-      ? "text-amber-300/90 border-amber-400/25 bg-amber-400/5"
+      ? "text-[var(--wx-warn)] border-[color-mix(in_srgb,var(--wx-warn)_35%,transparent)] bg-[var(--wx-warn-bg)]"
       : tone === "danger"
-        ? "text-red-300/90 border-red-400/25 bg-red-400/5"
-        : "wx-muted border-slate-500/20 bg-slate-500/5";
+        ? "text-[var(--wx-danger)] border-[color-mix(in_srgb,var(--wx-danger)_35%,transparent)] bg-[var(--wx-danger-bg)]"
+        : "wx-muted border-[var(--wx-border)] bg-[var(--wx-surface)]";
   return (
     <p className={`rounded-lg border px-3 py-2.5 text-sm ${color}`}>{children}</p>
   );
@@ -120,11 +120,11 @@ export function Chip({
   title?: string;
 }) {
   const tones: Record<string, string> = {
-    default: "border-slate-400/25 bg-slate-400/10 text-slate-200",
-    accent: "border-sky-400/40 bg-sky-400/12 text-sky-200",
-    warn: "border-amber-400/40 bg-amber-400/12 text-amber-200",
-    danger: "border-red-400/40 bg-red-400/12 text-red-200",
-    good: "border-emerald-400/40 bg-emerald-400/12 text-emerald-200",
+    default: "border-[var(--wx-border-strong)] bg-slate-400/10 text-[var(--wx-text)]",
+    accent: "border-[var(--wx-accent-border)] bg-sky-400/12 text-[var(--wx-accent-text)]",
+    warn: "border-[color-mix(in_srgb,var(--wx-warn)_45%,transparent)] bg-[var(--wx-warn-bg)] text-[var(--wx-warn)]",
+    danger: "border-[color-mix(in_srgb,var(--wx-danger)_45%,transparent)] bg-[var(--wx-danger-bg)] text-[var(--wx-danger)]",
+    good: "border-[color-mix(in_srgb,var(--wx-good)_45%,transparent)] bg-[var(--wx-good-bg)] text-[var(--wx-good)]",
   };
   return (
     <span
@@ -156,7 +156,7 @@ export function Meter({
     value === null ? 0 : Math.max(0, Math.min(100, (value / max) * 100));
   return (
     <div
-      className="h-1.5 w-full overflow-hidden rounded-full bg-slate-500/25"
+      className="h-1.5 w-full overflow-hidden rounded-full wx-track"
       role="meter"
       aria-valuenow={value ?? undefined}
       aria-valuemin={0}

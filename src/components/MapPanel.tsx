@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, Chip, Notice } from "./ui";
-import type { ResolvedPlace } from "@/lib/weather-types";
+import type { ResolvedPlace, ThemeName } from "@/lib/weather-types";
 
 /** Weather overlays offered in the picker, in draw order (bottom to top). */
 const WEATHER_LAYERS: { id: string; label: string; hint: string }[] = [
@@ -33,7 +33,13 @@ const OFFSETS = [
   { id: "+60minutes", label: "+60m" },
 ];
 
-export function MapPanel({ place }: { place: ResolvedPlace }) {
+export function MapPanel({
+  place,
+  theme = "light",
+}: {
+  place: ResolvedPlace;
+  theme?: ThemeName;
+}) {
   const [selected, setSelected] = useState<string[]>(["radar-global"]);
   const [zoom, setZoom] = useState(7);
   const [offsetIndex, setOffsetIndex] = useState(
@@ -57,9 +63,14 @@ export function MapPanel({ place }: { place: ResolvedPlace }) {
     };
   }, [playing]);
 
+  // Base and label layers follow the app theme so the map does not sit as a
+  // dark slab in the middle of a light page.
   const layerParam = useMemo(
-    () => ["flat-dk", ...selected, "admin-cities-dk", "countries"].join(","),
-    [selected]
+    () =>
+      theme === "dark"
+        ? ["flat-dk", ...selected, "admin-cities-dk", "countries"].join(",")
+        : ["flat", ...selected, "admin-cities", "countries"].join(","),
+    [selected, theme]
   );
 
   const src = useMemo(() => {
@@ -115,7 +126,7 @@ export function MapPanel({ place }: { place: ResolvedPlace }) {
           </div>
         }
       >
-        <div className="relative overflow-hidden rounded-xl border border-slate-400/20 bg-slate-900/60">
+        <div className="relative overflow-hidden rounded-xl border border-[var(--wx-border)] bg-[var(--wx-inset)]">
           {/* Static raster tile composite; the API key stays on the server. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -136,7 +147,7 @@ export function MapPanel({ place }: { place: ResolvedPlace }) {
             }
           />
           {!loaded && !failed && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 text-sm">
+            <div className="absolute inset-0 flex items-center justify-center bg-[var(--wx-inset)] text-sm">
               Loading map…
             </div>
           )}

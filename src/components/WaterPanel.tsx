@@ -105,7 +105,7 @@ function FloodBlock({ data }: { data: WaterPayload }) {
       {(warnings) =>
         warnings.length === 0 ? (
           <Card title="Flood warnings">
-            <p className="text-sm text-emerald-300/90">
+            <p className="text-sm wx-good-text">
               No flood warnings or alerts in force within 30 km.
             </p>
           </Card>
@@ -234,7 +234,7 @@ function TideBlock({
               <div className="wx-scroll -mx-1 px-1">
                 <table className="w-full min-w-[420px] text-sm">
                   <thead>
-                    <tr className="wx-muted border-b border-slate-400/20 text-left text-xs uppercase tracking-wide">
+                    <tr className="wx-muted border-b border-[var(--wx-border)] text-left text-xs uppercase tracking-wide">
                       <th className="py-2 pr-3 font-medium">Day</th>
                       <th className="py-2 pr-3 font-medium">Tide</th>
                       <th className="py-2 pr-3 text-right font-medium">Time</th>
@@ -247,7 +247,7 @@ function TideBlock({
                       return (
                         <tr
                           key={`${event.dateTimeISO}-${index}`}
-                          className={`border-b border-slate-400/10 last:border-0 ${
+                          className={`border-b border-[var(--wx-border)] last:border-0 ${
                             past ? "opacity-40" : ""
                           }`}
                         >

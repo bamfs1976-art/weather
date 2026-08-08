@@ -413,3 +413,5 @@ export interface PlaceSuggestion {
 }
 
 export type UnitSystem = "metric" | "imperial";
+
+export type ThemeName = "light" | "dark";

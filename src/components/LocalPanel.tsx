@@ -145,7 +145,7 @@ function CarbonBlock({ data, hour12 }: { data: LocalPayload; hour12: boolean }) 
                   {carbon.greenest && (
                     <p className="wx-muted mt-1 text-sm">
                       Cleanest window in the next 24 hours is{" "}
-                      <span className="text-slate-200">
+                      <span className="text-[var(--wx-text)]">
                         {formatTime(carbon.greenest.fromISO, hour12)}–
                         {formatTime(carbon.greenest.toISO, hour12)}
                       </span>{" "}
