@@ -418,3 +418,175 @@ export function pressureTrend(
 }
 
 export const dash = DASH;
+
+/* ------------------------- next precipitation --------------------- */
+
+export interface NextPrecipitation {
+  /** raining right now · starting within the hour · further out · nothing forecast */
+  state: "now" | "soon" | "later" | "none";
+  /** When it starts. Null when it is already falling. */
+  startISO: string | null;
+  /** When it is expected to stop, if the data reaches that far. */
+  endISO: string | null;
+  minutesAway: number | null;
+  durationMinutes: number | null;
+  probability: number | null;
+  amountMM: number | null;
+  amountIN: number | null;
+  /** "Rain", "Snow", "Thunderstorms"… as reported upstream. */
+  type: string;
+  /** How precise the answer is — drives the wording in the UI. */
+  precision: "minute" | "hour" | "day";
+}
+
+const WET =
+  /rain|shower|drizzle|snow|sleet|thunder|storm|flurr|freezing|wintry|hail|ice/i;
+
+const DRY: NextPrecipitation = {
+  state: "none",
+  startISO: null,
+  endISO: null,
+  minutesAway: null,
+  durationMinutes: null,
+  probability: null,
+  amountMM: null,
+  amountIN: null,
+  type: "Precipitation",
+  precision: "hour",
+};
+
+function minutesUntil(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return null;
+  return Math.max(0, Math.round((then - Date.now()) / 60_000));
+}
+
+function describeType(
+  period: { weatherPrimary?: string | null; weatherPrimaryCoded?: string | null },
+  fallback = "Precipitation"
+): string {
+  const primary = period.weatherPrimary;
+  if (primary && WET.test(primary)) return primary;
+  const coded = (period.weatherPrimaryCoded ?? "").toUpperCase();
+  if (coded.includes(":S")) return "Snow";
+  if (coded.includes(":T")) return "Thunderstorms";
+  if (coded.includes(":ZR")) return "Freezing rain";
+  if (coded.includes(":L")) return "Drizzle";
+  if (coded.includes(":R")) return "Rain";
+  return fallback;
+}
+
+/**
+ * Answer "when will it rain next?" from the data the dashboard already holds.
+ *
+ * Three resolutions, best first: the minute-by-minute nowcast covers the next
+ * hour exactly, the hourly forecast covers 48 hours, and the daily forecast
+ * catches anything further out. Each falls through to the next only when it has
+ * nothing to report, so the answer is always as precise as the data allows.
+ */
+export function nextPrecipitation(
+  minutely: {
+    dateTimeISO?: string;
+    precipMM?: number | null;
+    precipIN?: number | null;
+    precipRateMM?: number | null;
+    precipRateIN?: number | null;
+    weatherPrimary?: string | null;
+    weatherPrimaryCoded?: string | null;
+  }[],
+  hourly: WeatherPeriod[],
+  daily: WeatherPeriod[],
+  options: { hourlyPop?: number; dailyPop?: number } = {}
+): NextPrecipitation {
+  const hourlyPop = options.hourlyPop ?? 30;
+  const dailyPop = options.dailyPop ?? 40;
+
+  /* 1 — the next 60 minutes, to the minute. */
+  const rate = minutely.map((p) =>
+    isNum(p.precipRateMM) ? p.precipRateMM : isNum(p.precipMM) ? p.precipMM : 0
+  );
+  const firstWet = rate.findIndex((value) => value > 0);
+
+  if (firstWet !== -1) {
+    let end = firstWet;
+    while (end < rate.length && rate[end] > 0) end += 1;
+    const run = minutely.slice(firstWet, end);
+    const amountMM = run.reduce((sum, p) => sum + (p.precipMM ?? 0), 0);
+    const amountIN = run.reduce((sum, p) => sum + (p.precipIN ?? 0), 0);
+    const startISO = minutely[firstWet].dateTimeISO ?? null;
+
+    return {
+      state: firstWet === 0 ? "now" : "soon",
+      startISO: firstWet === 0 ? null : startISO,
+      endISO: end < minutely.length ? (minutely[end].dateTimeISO ?? null) : null,
+      minutesAway: firstWet === 0 ? 0 : minutesUntil(startISO),
+      durationMinutes: end < minutely.length ? run.length : null,
+      probability: null,
+      amountMM,
+      amountIN,
+      type: describeType(minutely[firstWet], "Rain"),
+      precision: "minute",
+    };
+  }
+
+  /* 2 — the next 48 hours. */
+  const wetHour = (p: WeatherPeriod) =>
+    (isNum(p.pop) && p.pop >= hourlyPop) ||
+    (isNum(p.precipMM) && p.precipMM > 0) ||
+    (p.weatherPrimary ? WET.test(p.weatherPrimary) : false);
+
+  const hourIndex = hourly.findIndex(wetHour);
+  if (hourIndex !== -1) {
+    let end = hourIndex;
+    while (end < hourly.length && wetHour(hourly[end])) end += 1;
+    const run = hourly.slice(hourIndex, end);
+    const startISO =
+      hourly[hourIndex].dateTimeISO ?? hourly[hourIndex].validTime ?? null;
+    const away = minutesUntil(startISO);
+
+    return {
+      state: away !== null && away <= 60 ? "soon" : "later",
+      startISO,
+      endISO:
+        end < hourly.length
+          ? (hourly[end].dateTimeISO ?? hourly[end].validTime ?? null)
+          : null,
+      minutesAway: away,
+      durationMinutes: end < hourly.length ? run.length * 60 : null,
+      probability: Math.max(
+        ...run.map((p) => (isNum(p.pop) ? p.pop : 0)),
+        0
+      ),
+      amountMM: run.reduce((sum, p) => sum + (p.precipMM ?? 0), 0),
+      amountIN: run.reduce((sum, p) => sum + (p.precipIN ?? 0), 0),
+      type: describeType(run.find((p) => p.weatherPrimary) ?? run[0], "Rain"),
+      precision: "hour",
+    };
+  }
+
+  /* 3 — anything left in the 10-day outlook. */
+  const dayIndex = daily.findIndex(
+    (p) =>
+      (isNum(p.pop) && p.pop >= dailyPop) ||
+      (isNum(p.precipMM) && p.precipMM >= 0.5)
+  );
+  if (dayIndex !== -1) {
+    const day = daily[dayIndex];
+    const startISO = day.dateTimeISO ?? day.validTime ?? null;
+    return {
+      state: "later",
+      startISO,
+      endISO: null,
+      minutesAway: minutesUntil(startISO),
+      durationMinutes: null,
+      probability: isNum(day.pop) ? day.pop : null,
+      amountMM: isNum(day.precipMM) ? day.precipMM : null,
+      amountIN: isNum(day.precipIN) ? day.precipIN : null,
+      type: describeType(day, "Rain"),
+      precision: "day",
+    };
+  }
+
+  return DRY;
+}

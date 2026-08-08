@@ -49,6 +49,13 @@ body {
     linear-gradient(180deg, var(--wx-bg-2) 0%, var(--wx-bg) 900px, #050912 1600px);
   background-repeat: no-repeat;
   font-variant-numeric: tabular-nums;
+
+  /* viewport-fit=cover lets the background reach the screen edges; these keep
+     content clear of the notch and home indicator in iOS standalone mode. */
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
 }
 
 .wx-card {

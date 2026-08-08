@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 export interface ChartSeries {
   label: string;
@@ -46,13 +46,32 @@ export function SeriesChart({
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const count = labels.length;
 
+  /*
+   * Track the rendered width so the viewBox can match it 1:1. With a fixed
+   * viewBox the whole drawing scales to fit, which shrinks axis labels to a few
+   * pixels on a phone; matching the box to real pixels keeps text at its stated
+   * size at every screen width.
+   */
+  const hostRef = useRef<HTMLElement>(null);
+  const [width, setWidth] = useState(1000);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const next = Math.round(entries[0].contentRect.width);
+      if (next > 0) setWidth(next);
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+
   if (count === 0 || series.every((s) => s.values.every((v) => v === null))) {
     return (
       <p className="wx-muted py-6 text-center text-sm">Not enough data to chart.</p>
     );
   }
 
-  const width = 1000;
   const padL = 42;
   const padR = 12;
   const padT = 14;
@@ -82,7 +101,9 @@ export function SeriesChart({
   const barBandH = plotH * 0.32;
   const barW = Math.max(2, (plotW / Math.max(count, 1)) * 0.55);
 
-  const step = showEvery ?? Math.max(1, Math.ceil(count / 8));
+  // Roughly 78px per label — fewer labels on a narrow phone, more on a desktop.
+  const maxLabels = Math.max(3, Math.floor(plotW / 78));
+  const step = showEvery ?? Math.max(1, Math.ceil(count / maxLabels));
 
   function pathFor(values: (number | null)[]): string {
     let d = "";
@@ -111,11 +132,12 @@ export function SeriesChart({
   }
 
   return (
-    <figure className="m-0">
+    <figure className="m-0" ref={hostRef}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        className="h-auto w-full"
-        preserveAspectRatio="none"
+        width={width}
+        height={height}
+        className="block max-w-full"
         role="img"
         aria-label={ariaLabel ?? series.map((s) => s.label).join(", ")}
       >

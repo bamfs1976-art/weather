@@ -6,6 +6,7 @@ import { SeriesChart } from "./Chart";
 import {
   clockAt,
   dash,
+  formatDayMonth,
   formatDistance,
   formatHeight,
   formatNumber,
@@ -16,7 +17,9 @@ import {
   formatSpeed,
   formatTemp,
   formatTime,
+  formatWeekday,
   isNum,
+  nextPrecipitation,
   pressureTrend,
   relativeFromNow,
   tzOffsetMinutes,
@@ -209,6 +212,8 @@ export function NowPanel({
           </div>
         </div>
       </section>
+
+      <NextRainCard overview={overview} units={units} hour12={hour12} />
 
       <MinutelyBlock overview={overview} units={units} hour12={hour12} />
 
@@ -456,6 +461,146 @@ export function NowPanel({
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * "When will it rain next?" — the question a weather app gets asked most.
+ * Answered from the nowcast, hourly and daily forecasts already in the payload,
+ * so it costs no extra request and degrades with whatever data is available.
+ */
+function NextRainCard({
+  overview,
+  units,
+  hour12,
+}: {
+  overview: WeatherOverview;
+  units: UnitSystem;
+  hour12: boolean;
+}) {
+  const { sections } = overview;
+  const minutely = sections.minutely.data?.periods ?? [];
+  const hourly = sections.hourly.data?.periods ?? [];
+  const daily = sections.daily.data?.periods ?? [];
+
+  if (
+    minutely.length === 0 &&
+    hourly.length === 0 &&
+    daily.length === 0
+  ) {
+    return null;
+  }
+
+  const next = nextPrecipitation(minutely, hourly, daily);
+  const label = next.type.toLowerCase();
+
+  let headline: string;
+  let detail: string | null = null;
+  let emoji = "🌂";
+  let tone: "good" | "accent" | "warn" = "good";
+
+  if (next.state === "none") {
+    headline = "No rain expected";
+    detail = "Nothing in the next 10 days of forecast.";
+    emoji = "☀️";
+  } else if (next.state === "now") {
+    headline = `${next.type} falling now`;
+    detail = next.endISO
+      ? `Easing around ${formatTime(next.endISO, hour12)}`
+      : "Expected to continue for at least the next hour";
+    emoji = "🌧️";
+    tone = "warn";
+  } else if (next.precision === "minute") {
+    // The nowcast can put the start in the current minute; "in 0 min" reads oddly.
+    headline =
+      next.minutesAway && next.minutesAway > 0
+        ? `${next.type} in ${next.minutesAway} min`
+        : `${next.type} starting any minute`;
+    detail = `Starting around ${formatTime(next.startISO, hour12)}${
+      next.endISO ? `, easing by ${formatTime(next.endISO, hour12)}` : ""
+    }`;
+    emoji = "🌦️";
+    tone = "warn";
+  } else if (next.precision === "hour") {
+    const hours = next.minutesAway === null ? null : Math.round(next.minutesAway / 60);
+    headline =
+      hours !== null && hours <= 24
+        ? `${next.type} likely in about ${hours} hour${hours === 1 ? "" : "s"}`
+        : `${next.type} likely ${formatWeekday(next.startISO)}`;
+    detail = `From ${formatWeekday(next.startISO)} ${formatTime(next.startISO, hour12)}${
+      next.endISO ? ` until about ${formatTime(next.endISO, hour12)}` : ""
+    }`;
+    emoji = "🌦️";
+    tone = "accent";
+  } else {
+    headline = `${next.type} likely ${formatWeekday(next.startISO)}`;
+    detail = `Next wet day is ${formatWeekday(next.startISO)} ${formatDayMonth(
+      next.startISO
+    )} — nothing before then`;
+    emoji = "🌤️";
+    tone = "accent";
+  }
+
+  const precisionNote =
+    next.state === "none"
+      ? null
+      : next.precision === "minute"
+        ? "From the minute-by-minute nowcast"
+        : next.precision === "hour"
+          ? "From the hourly forecast"
+          : "From the 10-day outlook";
+
+  return (
+    <Card title="Next rain" subtitle={precisionNote ?? undefined}>
+      <div className="flex flex-wrap items-center gap-4">
+        <span className="text-5xl leading-none" aria-hidden>
+          {emoji}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-xl font-semibold leading-tight sm:text-2xl">
+            {headline}
+          </p>
+          {detail && <p className="wx-muted mt-1 text-sm">{detail}</p>}
+        </div>
+        {next.state !== "none" && (
+          <Chip tone={tone}>
+            {next.precision === "minute" ? "Nowcast" : `${label} expected`}
+          </Chip>
+        )}
+      </div>
+
+      {next.state !== "none" && (
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Metric
+            label="Chance"
+            value={next.probability === null ? "—" : formatPercent(next.probability)}
+          />
+          <Metric
+            label="Expected amount"
+            value={formatPrecip(next.amountMM, next.amountIN, units)}
+          />
+          <Metric
+            label="Lasting"
+            value={
+              next.durationMinutes === null
+                ? "—"
+                : next.durationMinutes >= 120
+                  ? `${Math.round(next.durationMinutes / 60)} hr`
+                  : `${next.durationMinutes} min`
+            }
+          />
+          <Metric
+            label="Starts"
+            value={
+              next.state === "now" ? "Now" : formatTime(next.startISO, hour12)
+            }
+            hint={
+              next.state === "now" ? undefined : formatWeekday(next.startISO)
+            }
+          />
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function LocalClock({
   offsetMinutes,

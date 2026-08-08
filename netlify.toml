@@ -1,0 +1,18 @@
+# Netlify build configuration.
+#
+# Secrets do NOT belong here — this file is committed. Set XWEATHER_CLIENT_ID
+# and XWEATHER_CLIENT_SECRET under Site configuration → Environment variables,
+# scoped so that Functions can see them (the App Router API routes run as
+# Netlify Functions and read the credentials at request time).
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Netlify auto-detects Next.js, but declaring the plugin keeps the runtime
+# explicit and pinned to the repo rather than to UI state.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
