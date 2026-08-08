@@ -1,0 +1,182 @@
+@import "tailwindcss";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * The whole app is themed through .wx, which sits on <body>. Keeping the
+ * namespace means every component's class names stay stable and the theme can
+ * be dropped into another shell without collisions.
+ */
+
+.wx {
+  --wx-bg: #070d1b;
+  --wx-bg-2: #0d1628;
+  --wx-surface: rgba(255, 255, 255, 0.05);
+  --wx-surface-strong: rgba(255, 255, 255, 0.09);
+  --wx-border: rgba(148, 163, 184, 0.18);
+  --wx-border-strong: rgba(148, 163, 184, 0.32);
+  --wx-text: #e6edf7;
+  --wx-muted: #94a3b8;
+  --wx-dim: #64748b;
+  --wx-accent: #38bdf8;
+  --wx-accent-2: #818cf8;
+  --wx-warn: #f59e0b;
+  --wx-danger: #ef4444;
+  --wx-good: #34d399;
+
+  min-height: 100vh;
+  color: var(--wx-text);
+  /* The gradients are sized to the element, not the viewport, so the dark
+     ground covers the whole document however long the page grows. */
+  background-color: #050912;
+  background-image:
+    radial-gradient(1200px 600px at 12% -10%, rgba(56, 189, 248, 0.16), transparent 60%),
+    radial-gradient(1000px 500px at 88% 0%, rgba(129, 140, 248, 0.14), transparent 55%),
+    linear-gradient(180deg, var(--wx-bg-2) 0%, var(--wx-bg) 900px, #050912 1600px);
+  background-repeat: no-repeat;
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-card {
+  background: var(--wx-surface);
+  border: 1px solid var(--wx-border);
+  border-radius: 1rem;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.wx-card-hover:hover {
+  border-color: var(--wx-border-strong);
+  background: var(--wx-surface-strong);
+}
+
+.wx-inset {
+  background: rgba(4, 10, 22, 0.45);
+  border: 1px solid var(--wx-border);
+  border-radius: 0.75rem;
+}
+
+.wx-muted {
+  color: var(--wx-muted);
+}
+
+.wx-dim {
+  color: var(--wx-dim);
+}
+
+/* Horizontal scrollers (hourly strip, day cards) */
+.wx-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+.wx-scroll::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.wx-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
+}
+.wx-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Native form controls need coaxing onto a dark background */
+.wx input,
+.wx select,
+.wx button,
+.wx textarea {
+  color: inherit;
+  font: inherit;
+}
+
+.wx input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+  cursor: pointer;
+}
+
+.wx-field {
+  background: rgba(4, 10, 22, 0.6);
+  border: 1px solid var(--wx-border);
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  outline: none;
+}
+.wx-field:focus {
+  border-color: var(--wx-accent);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+}
+
+/* weather.css loads after Tailwind, so .wx-field's padding shorthand would
+   otherwise beat a pl-* utility on the search input. */
+.wx-field-search {
+  padding-left: 2.25rem;
+}
+
+.wx-btn {
+  border: 1px solid var(--wx-border);
+  border-radius: 0.6rem;
+  background: var(--wx-surface);
+  padding: 0.5rem 0.85rem;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.wx-btn:hover:not(:disabled) {
+  background: var(--wx-surface-strong);
+  border-color: var(--wx-border-strong);
+}
+.wx-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.wx-btn-active {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: rgba(56, 189, 248, 0.55);
+  color: #e0f2fe;
+}
+
+@keyframes wx-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.wx-fade {
+  animation: wx-fade-in 260ms ease both;
+}
+
+@keyframes wx-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.75; }
+}
+.wx-skeleton {
+  background: rgba(148, 163, 184, 0.18);
+  border-radius: 0.5rem;
+  animation: wx-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wx-fade,
+  .wx-skeleton {
+    animation: none;
+  }
+}
