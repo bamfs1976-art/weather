@@ -53,18 +53,25 @@ export function MapPanel({
   const [playing, setPlaying] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  /** Set when the server had to drop layers the upstream would not render. */
-  const [droppedLayers, setDroppedLayers] = useState<string[]>([]);
-  /**
-   * What the picture on screen actually is, as opposed to what the controls
-   * currently say. The two drift apart when a stale bundle is running or a
-   * response is served from cache, and without this the only symptom is "the
-   * map looks wrong", which is impossible to act on.
+  /*
+   * Everything known about one particular map URL, stored against that URL.
+   * Keying it this way means a change of layers or zoom invalidates the old
+   * verdict for free — there is no reset effect to forget, and a stale error
+   * can never be shown over a fresh picture.
    */
-  const [shown, setShown] = useState<{ layers: string; zoom: string } | null>(null);
+  const [status, setStatus] = useState<{
+    src: string;
+    error?: string;
+    /** Layers the server had to drop because the upstream refused them. */
+    dropped?: string[];
+    /**
+     * What the picture on screen actually is, as opposed to what the controls
+     * currently say. The two drift apart when a stale bundle is running or a
+     * response is served from cache, and without this the only symptom is "the
+     * map looks wrong", which is impossible to act on.
+     */
+    shown?: { layers: string; zoom: string };
+  } | null>(null);
 
   useEffect(() => {
     if (!playing) {
@@ -116,80 +123,70 @@ export function MapPanel({
     return `/api/map?${params.toString()}`;
   }, [place.lat, place.lon, zoom, layerParam, offsetIndex]);
 
+  // Only trust the stored verdict if it belongs to the URL now on screen.
+  const current = status?.src === src ? status : null;
+  const error = current?.error ?? null;
+  const loading = current === null;
+  const droppedLayers = current?.dropped ?? [];
+  const shown = current?.shown ?? null;
+
   /*
-   * Fetched rather than dropped straight into <img src>, because an <img> can
-   * only report "it failed" — it cannot read the JSON body explaining why. A
-   * rejected layer name and an unsubscribed account both used to surface as
-   * the same misleading message.
+   * The image is rendered by pointing <img> straight at the proxy URL, which is
+   * the path every browser optimises and caches. An earlier version fetched the
+   * bytes, wrapped them in a Blob and swapped object URLs by hand, purely so a
+   * JSON error body could be read. That put the one thing that must always work
+   * — showing a picture — behind blob lifetimes and manual revocation, and left
+   * no way to tell a broken layer from a browser that had simply kept the old
+   * object URL. Errors are rare, so pay for the detail only when one happens:
+   * onError re-requests the same (already-cached) URL just to read the reason.
    */
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-
-    setLoading(true);
-    setError(null);
-    setDroppedLayers([]);
-
-    (async () => {
-      try {
-        const res = await fetch(src, { signal: AbortSignal.timeout(20_000) });
-        if (!res.ok) {
-          let detail = `HTTP ${res.status}`;
-          try {
-            const body = await res.json();
-            if (body?.error) detail = String(body.error);
-          } catch {
-            /* non-JSON error body — the status will have to do */
-          }
-          if (!cancelled) setError(detail);
-          return;
-        }
+  function handleLoad(loaded: string) {
+    const sent = new URL(loaded, window.location.origin).searchParams;
+    const zoomShown = sent.get("zoom") ?? "";
+    setStatus({
+      src: loaded,
+      shown: { layers: sent.get("layers") ?? "", zoom: zoomShown },
+    });
+    /*
+     * The response headers say which layers actually rendered, and <img> cannot
+     * read headers. This repeat request is a cache hit (the route sends
+     * max-age=120 for the identical URL), so it costs a header read, not an
+     * image download.
+     */
+    fetch(loaded)
+      .then((res) => {
         const used = res.headers.get("X-Map-Layers");
         const requested = res.headers.get("X-Map-Requested");
-        if (used && requested && used !== requested) {
-          const kept = new Set(used.split(","));
-          const dropped = requested.split(",").filter((l) => !kept.has(l));
-          if (!cancelled && dropped.length) setDroppedLayers(dropped);
-        }
-
-        const blob = await res.blob();
-        if (cancelled) return;
-        const sent = new URL(src, window.location.origin).searchParams;
-        setShown({
-          layers: used ?? sent.get("layers") ?? "",
-          zoom: sent.get("zoom") ?? "",
+        if (!used || !requested) return;
+        const kept = new Set(used.split(","));
+        const dropped = requested.split(",").filter((l) => !kept.has(l));
+        setStatus({
+          src: loaded,
+          dropped,
+          shown: { layers: used, zoom: zoomShown },
         });
-        objectUrl = URL.createObjectURL(blob);
-        setImageUrl((previous) => {
-          if (previous) URL.revokeObjectURL(previous);
-          return objectUrl;
-        });
-      } catch (err) {
-        if (cancelled) return;
-        setError(
-          err instanceof Error && err.name === "TimeoutError"
-            ? "The map image timed out."
-            : "The map image could not be loaded."
-        );
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [src]);
-
-  // Release the last object URL when the panel goes away.
-  useEffect(() => {
-    return () => {
-      setImageUrl((previous) => {
-        if (previous) URL.revokeObjectURL(previous);
-        return null;
+      })
+      .catch(() => {
+        /* the picture is already on screen; the chip is a nicety */
       });
-    };
-  }, []);
+  }
+
+  function handleError(failed: string) {
+    fetch(failed)
+      .then(async (res) => {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const body = await res.json();
+          if (body?.error) detail = String(body.error);
+        } catch {
+          /* non-JSON error body — the status will have to do */
+        }
+        setStatus({ src: failed, error: detail });
+      })
+      .catch(() =>
+        setStatus({ src: failed, error: "The map image could not be loaded." })
+      );
+  }
 
   function toggleOverlay(id: string) {
     setOverlays((current) =>
@@ -231,10 +228,18 @@ export function MapPanel({
         }
       >
         <div className="relative overflow-hidden rounded-xl border border-[var(--wx-border)] bg-[var(--wx-inset)]">
-          {imageUrl && !error ? (
+          {!error ? (
+            /*
+             * key={src} forces a fresh element per URL. Without it a browser
+             * that decides the swap is not worth a repaint can leave the old
+             * picture up, which is indistinguishable from a broken map.
+             */
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
-              src={imageUrl}
+              key={src}
+              src={src}
+              onLoad={() => handleLoad(src)}
+              onError={() => handleError(src)}
               alt={`Weather map of ${place.displayName} showing ${
                 activeView?.label ?? "base map"
               }${overlays.length ? ` with ${overlays.join(", ")}` : ""}`}
