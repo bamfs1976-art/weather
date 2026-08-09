@@ -217,6 +217,14 @@ export default function WeatherPage() {
             Swansea Weather
           </p>
           {/*
+            lang="cy" matters here rather than being decoration: without it a
+            screen reader pronounces "Tywydd Abertawe" with English phonetics,
+            which is worse than not showing it at all.
+          */}
+          <p className="wx-welsh" lang="cy">
+            Tywydd Abertawe
+          </p>
+          {/*
             The tagline names what the app actually carries now. "Live data from
             the Vaisala Xweather API" stopped being true once the Met Office,
             the Environment Agency and Open-Meteo joined it, and crediting one

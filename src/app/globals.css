@@ -1146,3 +1146,17 @@ body {
   position: relative;
   z-index: 60;
 }
+
+/*
+ * The Welsh name, sitting between the English one and the tagline. Display face
+ * and accent colour so it reads as a second name rather than as body copy, and
+ * a shade smaller so it never competes with the English above it.
+ */
+.wx-welsh {
+  margin: 0.0625rem 0 0.125rem;
+  font-family: var(--wx-font-display);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--wx-accent-text);
+}
