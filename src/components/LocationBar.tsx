@@ -281,7 +281,9 @@ export function LocationBar({
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        {/* relative here, not on the gear: a 240px panel anchored to a 44px
+            button runs off the left edge of a 390px screen. */}
+        <div className="relative flex items-center gap-1.5">
           <IconButton label="Use my location" onClick={useMyLocation}>
             <PinIcon size={18} />
           </IconButton>
@@ -298,27 +300,26 @@ export function LocationBar({
             </span>
           </IconButton>
 
-          <div className="relative">
-            <IconButton
-              label="Settings"
-              onClick={() => setSettingsOpen((o) => !o)}
-              pressed={settingsOpen}
-              expanded={settingsOpen}
-            >
-              <GearIcon size={18} />
-            </IconButton>
-            {settingsOpen && (
-              <SettingsPopover
-                units={units}
-                hour12={hour12}
-                theme={theme}
-                onUnitsChange={onUnitsChange}
-                onHour12Change={onHour12Change}
-                onThemeChange={onThemeChange}
-                onClose={() => setSettingsOpen(false)}
-              />
-            )}
-          </div>
+          <IconButton
+            label="Settings"
+            onClick={() => setSettingsOpen((o) => !o)}
+            pressed={settingsOpen}
+            expanded={settingsOpen}
+          >
+            <GearIcon size={18} />
+          </IconButton>
+
+          {settingsOpen && (
+            <SettingsPopover
+              units={units}
+              hour12={hour12}
+              theme={theme}
+              onUnitsChange={onUnitsChange}
+              onHour12Change={onHour12Change}
+              onThemeChange={onThemeChange}
+              onClose={() => setSettingsOpen(false)}
+            />
+          )}
         </div>
       </div>
 

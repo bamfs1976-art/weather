@@ -779,7 +779,7 @@ body {
 
 .wx-chip-btn {
   flex: 0 0 auto;
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 0.75rem;
   border: 1px solid var(--wx-border);
   border-radius: 999px;
@@ -802,6 +802,8 @@ body {
   top: calc(100% + 0.5rem);
   z-index: 50;
   width: 15rem;
+  /* Never wider than the screen allows, whatever it is anchored to. */
+  max-width: calc(100vw - 1.5rem);
   padding: 0.75rem;
   background: var(--wx-surface-strong);
   border: 1px solid var(--wx-border);
@@ -833,7 +835,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.3rem;
-  min-height: 36px;
+  /* Inside a popover is still a tap target. */
+  min-height: 44px;
   border: 0;
   border-radius: 10px;
   background: transparent;
