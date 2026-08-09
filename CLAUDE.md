@@ -154,12 +154,14 @@ nowcast, no radar rasters and no archive, which is most of what this app does.
 - **Land observations is the one worth having** — real hourly measurements from
   ~150 stations for the past 48 hours, free at 360 calls a day, and the only
   source here that is a measurement rather than a model. Its product slug is
-  still unknown: six spellings × two versions all returned product-not-found.
-  **Do not add a thirteenth guess.** `/api/diagnostics?product=<slug>&version=`
-  tries a slug read off the DataHub product page without a code change, which
-  is the cheap way to settle it. The value reaches a fetch carrying the API key,
-  so it is validated against `[a-z0-9-]{1,64}` and the URL is always rebuilt
-  against HOST — never interpolated raw.
+  at **`/observation-land/1`** — noun order inverted against the product's own
+  name, the docs URL and every spelling tried, and a bare `1` where the other
+  three products use `1.0.0`. Twelve probes missed it and no thirteenth would
+  have found it; it came off the DataHub product page. If a future product goes
+  missing, `/api/diagnostics?product=<slug>&version=` tries one from the browser
+  with no redeploy. That value reaches a fetch carrying the API key, so it is
+  validated against `[a-z0-9-]{1,64}` and the URL is always rebuilt against HOST
+  — never interpolated raw.
 - **The version segment is not always `1.0.0`.** Site-specific lives at
   `/sitespecific/v0/point/hourly`, so a slug that returns product-not-found
   under one version has not been ruled out until the others are tried; pass one

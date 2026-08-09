@@ -37,6 +37,12 @@ interface Product {
   versions: string[];
   /** Product slugs to test for existence, most likely first. */
   slugs: string[];
+  /**
+   * What a total miss means for this product. Once a slug is known to be right,
+   * "the slug is wrong" stops being the useful advice — the subscription or the
+   * key is the thing left to check.
+   */
+  whenMissing?: string;
   /** Resources to try under whichever slug turns out to exist. */
   resources: string[];
 }
@@ -86,19 +92,32 @@ const PRODUCTS: Product[] = [
     label: "Land observations",
     keyEnv: "METOFFICE_OBS_API_KEY",
     note: "Hourly readings from ~150 UK stations. Worth integrating — these are measurements, so they can be shown against the interpolated conditions rather than as another forecast.",
-    // Six spellings returned product-not-found under 1.0.0, which rules out the
-    // slugs only for that version. Site-specific lives at v0, so both are tried
-    // before concluding anything.
-    versions: ["1.0.0", "v0"],
-    slugs: [
-      "land-observations",
+    /*
+     * `observation-land/1`, read off the DataHub product page by the account
+     * holder. Twelve probes had missed it, and fairly: the noun order is
+     * inverted against the product's own name ("Land Observations"), the docs
+     * URL and every other spelling tried, and the version is a bare "1" rather
+     * than the "1.0.0" the other three products use. Neither half was reachable
+     * by inference — which is the whole argument for asking.
+     */
+    // The other spellings are gone: they cost quota to re-disprove, and the
+    // slug is no longer in doubt.
+    versions: ["1", "1.0.0"],
+    slugs: ["observation-land"],
+    whenMissing:
+      "the slug came from the DataHub product page, so this is not a spelling problem — check METOFFICE_OBS_API_KEY belongs to the Land Observations subscription rather than to one of the other three products.",
+    // "" probes the base itself, in case it lists its own resources.
+    resources: [
+      "",
+      "sites",
+      "collections",
       "observations",
-      "land-obs",
-      "surface-observations",
-      "landsurface-observations",
-      "obs",
+      "latest",
+      "hourly",
+      "point/hourly",
+      "all/latest",
+      "capabilities",
     ],
-    resources: ["collections", "sites", "stations", "capabilities", "latest", "hourly"],
   },
   {
     id: "atmospheric",
@@ -256,21 +275,40 @@ async function probe(product: Product): Promise<ProductDiscovery> {
         found = { slug: candidate, version };
         break outer;
       }
+      /*
+       * `__probe` alone would miss a gateway that answers on the bare base and
+       * reports product-not-found for anything below it — which is exactly the
+       * shape a "/{product}/{version}" URL with no resource suggests. One more
+       * request per rejected candidate, and only when the first said no.
+       */
+      const bare = `${HOST}/${candidate}/${version}`;
+      const root = await get(bare, key);
+      base.attempts.push(describe(bare, root));
+      if (root.status !== null && root.status < 400) {
+        found = { slug: candidate, version };
+        break outer;
+      }
     }
   }
 
   if (!found) {
     return {
       ...base,
-      verdict: `no product matched — every candidate slug returned product-not-found under ${product.versions.join(" and ")}, so the slug itself is wrong. Open this product in the DataHub portal and copy the request URL it shows.`,
+      verdict:
+        `no product matched — ${product.slugs.join(", ")} returned product-not-found under ${product.versions.join(" and ")}. ` +
+        (product.whenMissing ??
+          "The slug itself is wrong; open this product in the DataHub portal and copy the request URL it shows."),
     };
   }
 
   const { slug, version } = found;
 
   /* Pass two: the resource, under the slug and version now known to exist. */
+  const root = `${HOST}/${slug}/${version}`;
   for (const resource of product.resources) {
-    const url = `${HOST}/${slug}/${version}/${resource}`;
+    // An empty resource means the base itself, without a trailing slash: some
+    // gateways answer there with a listing and 404 on `.../1/`.
+    const url = resource ? `${root}/${resource}` : root;
     const got = await get(url, key);
     if (got.status !== null && got.status >= 200 && got.status < 300) {
       const attempt = describe(url, got);
