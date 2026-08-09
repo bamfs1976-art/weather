@@ -18,6 +18,7 @@ import {
   httpStatusForCode,
   resolvePlace,
 } from "@/lib/xweather";
+import { getPollen } from "@/lib/pollen";
 import type { WeatherOverview } from "@/lib/weather-types";
 
 export const dynamic = "force-dynamic";
@@ -25,8 +26,8 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/overview?p=<location>
  *
- * Fans out to every Xweather data set the dashboard uses and returns them in a
- * single payload. Each data set is wrapped in a Section, so an endpoint that is
+ * Fans out to every Xweather data set the dashboard uses, plus the CAMS pollen
+ * forecast, and returns them in a single payload. Each data set is wrapped in a Section, so an endpoint that is
  * missing from the caller's subscription degrades to an inline notice instead
  * of failing the whole request.
  */
@@ -77,6 +78,7 @@ export async function GET(request: NextRequest) {
     lightning,
     phrase,
     recent,
+    pollen,
   ] = await Promise.all([
     getCurrentConditions(point),
     getObservation(point),
@@ -92,6 +94,13 @@ export async function GET(request: NextRequest) {
     getLightningSummary(point, 50),
     getPhrase(point),
     getRecentConditions(point, 24),
+    getPollen(
+      resolved.data.lat,
+      resolved.data.lon,
+      typeof resolved.data.tzoffset === "number"
+        ? Math.round(resolved.data.tzoffset / 60)
+        : null
+    ),
   ]);
 
   const payload: WeatherOverview = {
@@ -112,6 +121,7 @@ export async function GET(request: NextRequest) {
       lightning,
       phrase,
       recent,
+      pollen,
     },
   };
 

@@ -89,6 +89,15 @@ export function SeriesChart({
   const pad = (max - min) * 0.12;
   min -= pad;
   max += pad;
+  /*
+   * Headroom below the lowest value is what stops a line sitting on the axis,
+   * but it must not invent negative readings: a pollen count, a wave height or
+   * a rainfall total cannot go below zero, and an axis labelled -11 grains
+   * makes the chart look broken. Only clamp when the data is entirely
+   * non-negative, so series that genuinely go below zero — temperature, say —
+   * keep their padding.
+   */
+  if (min < 0 && all.every((v) => v >= 0)) min = 0;
 
   const x = (i: number) => padL + (count === 1 ? plotW / 2 : (i / (count - 1)) * plotW);
   const y = (v: number) => padT + plotH - ((v - min) / (max - min)) * plotH;

@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  getBathingWaters,
   getFloodWarnings,
   getMarineConditions,
   getRiverStations,
+  getTideGauge,
 } from "@/lib/water";
 import { resolvePlace } from "@/lib/xweather";
 import type { WaterPayload } from "@/lib/water-types";
@@ -12,9 +14,10 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/water?p=<location>  (or ?lat=&lon=)
  *
- * River gauges and flood warnings from the Environment Agency's open
- * flood-monitoring feed, plus sea state from Open-Meteo. Each source is a
- * Section, so one dead upstream only blanks its own card.
+ * River gauges, tide gauges and flood warnings from the Environment Agency's
+ * open flood-monitoring feed, bathing water quality from the Defra/NRW feed,
+ * and sea state from Open-Meteo. Each source is a Section, so one dead upstream
+ * only blanks its own card.
  */
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
@@ -62,16 +65,18 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const [floods, rivers, marine] = await Promise.all([
+  const [floods, rivers, marine, tides, bathing] = await Promise.all([
     getFloodWarnings(lat, lon, 30, offsetMinutes),
     getRiverStations(lat, lon, 20, 3, offsetMinutes),
     getMarineConditions(lat, lon, offsetMinutes),
+    getTideGauge(lat, lon, offsetMinutes),
+    getBathingWaters(lat, lon),
   ]);
 
   const payload: WaterPayload = {
     place: { lat, lon, name },
     fetchedAt: new Date().toISOString(),
-    sections: { floods, rivers, marine },
+    sections: { floods, rivers, marine, tides, bathing },
   };
 
   return NextResponse.json(payload, {

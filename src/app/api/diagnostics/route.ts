@@ -6,7 +6,14 @@ import {
   resolvePlace,
   xwFetch,
 } from "@/lib/xweather";
-import { getFloodWarnings, getMarineConditions, getRiverStations } from "@/lib/water";
+import {
+  getBathingWaters,
+  getFloodWarnings,
+  getMarineConditions,
+  getRiverStations,
+  getTideGauge,
+} from "@/lib/water";
+import { getPollen } from "@/lib/pollen";
 import {
   BASE_LAYERS,
   DECORATION_LAYERS,
@@ -85,15 +92,21 @@ export async function GET(request: NextRequest) {
 
   const water = point
     ? await (async () => {
-        const [floods, rivers, marine] = await Promise.all([
+        const [floods, rivers, marine, tides, bathing, pollen] = await Promise.all([
           getFloodWarnings(point.lat, point.lon, 30),
           getRiverStations(point.lat, point.lon, 20, 2),
           getMarineConditions(point.lat, point.lon),
+          getTideGauge(point.lat, point.lon),
+          getBathingWaters(point.lat, point.lon),
+          getPollen(point.lat, point.lon),
         ]);
         return [
           { endpoint: "EA flood-monitoring: floods", ok: floods.ok, code: floods.code, message: floods.error },
           { endpoint: "EA flood-monitoring: stations + measures", ok: rivers.ok, code: rivers.code, message: rivers.error },
+          { endpoint: "EA flood-monitoring: tide gauge", ok: tides.ok, code: tides.code, message: tides.error },
+          { endpoint: "Defra/NRW bathing water quality", ok: bathing.ok, code: bathing.code, message: bathing.error },
           { endpoint: "Open-Meteo Marine", ok: marine.ok, code: marine.code, message: marine.error },
+          { endpoint: "Open-Meteo air quality (pollen)", ok: pollen.ok, code: pollen.code, message: pollen.error },
         ];
       })()
     : [];

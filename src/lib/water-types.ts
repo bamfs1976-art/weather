@@ -59,6 +59,48 @@ export interface MarineConditions {
   maxWaveAtISO: string | null;
 }
 
+/** One observed sea level at a tide gauge. */
+export interface TideReading {
+  timeISO: string;
+  levelM: number;
+}
+
+/** A high or low water that has already occurred, found in the level series. */
+export interface TideExtreme extends TideReading {
+  kind: "high" | "low";
+}
+
+export interface TideGauge {
+  id: string;
+  label: string;
+  distanceKM: number | null;
+  unit: string | null;
+  latest: TideReading | null;
+  /** The last 48 hours, oldest first. */
+  readings: TideReading[];
+  extremes: TideExtreme[];
+  /** Peak-to-trough over the series — a rough spring/neap indicator. */
+  rangeM: number | null;
+  /** Null when the last two readings are identical, i.e. at the turn. */
+  rising: boolean | null;
+}
+
+export interface BathingWater {
+  id: string;
+  name: string;
+  district: string | null;
+  lat: number | null;
+  lon: number | null;
+  distanceKM: number | null;
+  /** Most recent in-season sample; null outside the sampling season. */
+  latestSampleISO: string | null;
+  /** Excellent · Good · Sufficient · Poor, for that single sample. */
+  latestSampleClass: string | null;
+  /** The published annual classification, from four years of samples. */
+  annualClass: string | null;
+  profileUrl: string | null;
+}
+
 export interface WaterPayload {
   place: { lat: number; lon: number; name: string };
   fetchedAt: string;
@@ -66,5 +108,7 @@ export interface WaterPayload {
     floods: Section<FloodWarning[]>;
     rivers: Section<RiverStation[]>;
     marine: Section<MarineConditions>;
+    tides: Section<TideGauge>;
+    bathing: Section<BathingWater[]>;
   };
 }

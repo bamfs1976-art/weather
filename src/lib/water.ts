@@ -17,24 +17,34 @@
  * an exception, exactly like the Xweather sections.
  */
 
+import { latLonToGrid } from "./osgb";
 import type { Section } from "./weather-types";
 import type {
+  BathingWater,
   FloodWarning,
   MarineConditions,
   MarineHour,
   RiverMeasure,
   RiverStation,
+  TideExtreme,
+  TideGauge,
+  TideReading,
 } from "./water-types";
 
 /* Overridable so the EA response handling can be tested offline. */
 const EA_BASE =
   process.env.EA_BASE_URL ?? "https://environment.data.gov.uk/flood-monitoring";
+const BWQ_BASE =
+  process.env.BWQ_BASE_URL ?? "https://environment.data.gov.uk";
 const MARINE_BASE = "https://marine-api.open-meteo.com/v1/marine";
 
 const TTL = {
   floods: 300,
   readings: 600,
   marine: 1_800,
+  // Samples are weekly in season and the annual class changes once a year,
+  // so this is the one feed where a long cache costs nothing.
+  bathing: 21_600,
 } as const;
 
 function fail<T>(error: string, code: string | null = null): Section<T> {
@@ -397,6 +407,340 @@ export async function getRiverStations(
    * the whole card look empty when only the readings lookup had failed.
    */
   return succeed(withMeasures);
+}
+
+/* ------------------------------------------------------------------ */
+/* Tides (EA tide gauge network — free, no key)                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Sea level from the nearest tide gauge, with the recent turning points.
+ *
+ * A deliberate limitation, stated here because it changes what the card can
+ * honestly claim: these are *measurements*, not predictions. The Environment
+ * Agency's gauge network reports observed sea level every fifteen minutes, so
+ * the high and low waters below are ones that have already happened. A
+ * published tide table works the other way round — it predicts them — and that
+ * needs an Admiralty subscription. What this gives instead is the actual water
+ * level right now and the state of the tide, which for "is the beach in or
+ * out" is arguably the more useful of the two.
+ */
+export async function getTideGauge(
+  lat: number,
+  lon: number,
+  offsetMinutes: number | null = null,
+  distKm = 60
+): Promise<Section<TideGauge>> {
+  const stationSection = await getJSON<{ items?: RawStation | RawStation[] }>(
+    `${EA_BASE}/id/stations?type=TideGauge&lat=${lat}&long=${lon}&dist=${distKm}&_limit=10`,
+    TTL.readings
+  );
+  if (!stationSection.ok || !stationSection.data) {
+    return { ok: false, data: null, error: stationSection.error, code: stationSection.code };
+  }
+
+  const nearest = toArray(stationSection.data.items)
+    .map((item) => {
+      const sLat = num(firstOf(item.lat));
+      const sLon = num(firstOf(item.long));
+      return {
+        item,
+        distance:
+          sLat !== null && sLon !== null ? distanceKM(lat, lon, sLat, sLon) : null,
+      };
+    })
+    .sort((a, b) => (a.distance ?? 1e9) - (b.distance ?? 1e9))[0];
+
+  if (!nearest) {
+    return fail<TideGauge>(
+      "No tide gauge within range — the network covers the coast only.",
+      "warn_no_data"
+    );
+  }
+
+  const notation =
+    str(nearest.item.notation) ?? str(nearest.item["@id"])?.split("/").pop() ?? "";
+  if (!notation) {
+    return fail<TideGauge>("The nearest tide gauge has no station id.", "bad_response");
+  }
+
+  // 48 hours at four readings an hour, oldest first, so the series can be
+  // charted directly and the turning points found by walking it.
+  const since = new Date(Date.now() - 48 * 3600_000).toISOString().slice(0, 19) + "Z";
+  const readingSection = await getJSON<{ items?: RawReading | RawReading[] }>(
+    `${EA_BASE}/id/stations/${encodeURIComponent(notation)}/readings` +
+      `?since=${encodeURIComponent(since)}&_sorted&_limit=250`,
+    TTL.readings
+  );
+  if (!readingSection.ok || !readingSection.data) {
+    return { ok: false, data: null, error: readingSection.error, code: readingSection.code };
+  }
+
+  const readings: TideReading[] = toArray(readingSection.data.items)
+    .map((reading) => {
+      const when = str(reading.dateTime);
+      const level = num(reading.value);
+      return when !== null && level !== null
+        ? { timeISO: withOffset(when, offsetMinutes), levelM: level, at: Date.parse(when) }
+        : null;
+    })
+    .filter((r): r is TideReading & { at: number } => r !== null)
+    .sort((a, b) => a.at - b.at)
+    .map(({ timeISO, levelM }) => ({ timeISO, levelM }));
+
+  if (readings.length < 4) {
+    return fail<TideGauge>(
+      "The nearest tide gauge is not currently reporting.",
+      "warn_no_data"
+    );
+  }
+
+  const levels = readings.map((r) => r.levelM);
+  const latest = readings[readings.length - 1];
+  const previous = readings[readings.length - 2];
+
+  return succeed({
+    id: notation,
+    label: str(firstOf(nearest.item.label)) ?? notation,
+    distanceKM: nearest.distance,
+    unit: "m",
+    latest,
+    readings,
+    extremes: findTurningPoints(readings),
+    rangeM: Math.max(...levels) - Math.min(...levels),
+    rising: latest.levelM === previous.levelM ? null : latest.levelM > previous.levelM,
+  });
+}
+
+/**
+ * Find high and low waters in a level series.
+ *
+ * A plain "higher than both neighbours" test finds dozens of false peaks,
+ * because a gauge in a swell records noise of a few centimetres on top of a
+ * curve that moves metres. So a point has to be the extreme of a window either
+ * side of it, and consecutive turning points must alternate high/low and sit at
+ * least three hours apart — half a tidal cycle being roughly six.
+ */
+function findTurningPoints(readings: TideReading[]): TideExtreme[] {
+  /*
+   * Work on a smoothed copy. Around high and low water the tide is nearly
+   * flat — it moves less in a quarter of an hour than a gauge's own noise does
+   * — so taking the single highest sample puts the turn wherever the noise
+   * happened to peak, which measured up to fifteen minutes out against a
+   * synthetic curve with a known answer. A centred mean cannot shift a
+   * symmetric peak, so it costs nothing and removes most of that error.
+   */
+  const smooth = smoothLevels(readings.map((r) => r.levelM), 2);
+  const WINDOW = 8; // ±2 hours at four readings an hour
+  /*
+   * The window shrinks at the ends of the series, because the most recent turn
+   * is the one people care about and a fixed window can never see it: a high
+   * water ninety minutes ago has only six readings after it, so requiring eight
+   * hides it and the card reports a high from half a day earlier instead. An
+   * hour either side is still ample to distinguish a real turn from noise,
+   * given the alternation and spacing rules below.
+   */
+  const MIN_SIDE = 4;
+  const MIN_GAP_MS = 3 * 3600_000;
+  const found: TideExtreme[] = [];
+
+  for (let i = MIN_SIDE; i < readings.length - MIN_SIDE; i++) {
+    const level = smooth[i];
+    const side = Math.min(WINDOW, i, readings.length - 1 - i);
+    let isHigh = true;
+    let isLow = true;
+    for (let j = i - side; j <= i + side; j++) {
+      if (j === i) continue;
+      if (smooth[j] > level) isHigh = false;
+      if (smooth[j] < level) isLow = false;
+    }
+    if (!isHigh && !isLow) continue;
+
+    const kind: "high" | "low" = isHigh ? "high" : "low";
+    const refined = refineTurn(readings, smooth, i);
+    const at = Date.parse(refined.timeISO);
+    const last = found[found.length - 1];
+    if (last) {
+      const gap = at - Date.parse(last.timeISO);
+      if (gap < MIN_GAP_MS) {
+        // Same turning point seen twice: keep whichever is more extreme.
+        const better =
+          kind === "high" ? refined.levelM > last.levelM : refined.levelM < last.levelM;
+        if (kind === last.kind && better) {
+          found[found.length - 1] = { ...refined, kind };
+        }
+        continue;
+      }
+      if (kind === last.kind) continue;
+    }
+    found.push({ ...refined, kind });
+  }
+
+  return found;
+}
+
+/** Centred moving average. Radius 0 returns the input unchanged. */
+function smoothLevels(levels: number[], radius: number): number[] {
+  if (radius <= 0) return levels;
+  return levels.map((_, i) => {
+    const from = Math.max(0, i - radius);
+    const to = Math.min(levels.length - 1, i + radius);
+    let sum = 0;
+    for (let j = from; j <= to; j++) sum += levels[j];
+    return sum / (to - from + 1);
+  });
+}
+
+/**
+ * Place the turn between samples by fitting a parabola through the smoothed
+ * neighbours. Readings arrive every fifteen minutes, so without this the answer
+ * can only ever be a multiple of fifteen; with it, a flat peak resolves to
+ * roughly the nearest minute.
+ */
+function refineTurn(
+  readings: TideReading[],
+  smooth: number[],
+  i: number
+): TideReading {
+  const fallback = { timeISO: readings[i].timeISO, levelM: smooth[i] };
+  if (i <= 0 || i >= readings.length - 1) return fallback;
+
+  const before = smooth[i - 1];
+  const at = smooth[i];
+  const after = smooth[i + 1];
+  const denominator = before - 2 * at + after;
+  if (denominator === 0) return fallback;
+
+  // Vertex of the parabola through the three points, in samples from i.
+  const offset = (0.5 * (before - after)) / denominator;
+  if (!Number.isFinite(offset) || Math.abs(offset) > 1) return fallback;
+
+  const t = Date.parse(readings[i].timeISO);
+  const step =
+    Date.parse(readings[i + 1].timeISO) - Date.parse(readings[i - 1].timeISO);
+  if (Number.isNaN(t) || !Number.isFinite(step) || step <= 0) return fallback;
+
+  const shifted = new Date(t + offset * (step / 2));
+  // Keep the offset the series carries rather than collapsing to UTC.
+  const zone = readings[i].timeISO.match(/(Z|[+-]\d{2}:\d{2})$/)?.[1] ?? "Z";
+  const stamp =
+    zone === "Z"
+      ? shifted.toISOString().replace(/\.\d{3}Z$/, "Z")
+      : new Date(shifted.getTime() + zoneOffsetMs(zone))
+          .toISOString()
+          .replace(/\.\d{3}Z$/, "") + zone;
+
+  return { timeISO: stamp, levelM: at - 0.25 * (before - after) * offset };
+}
+
+function zoneOffsetMs(zone: string): number {
+  const match = zone.match(/^([+-])(\d{2}):(\d{2})$/);
+  if (!match) return 0;
+  const sign = match[1] === "-" ? -1 : 1;
+  return sign * (Number(match[2]) * 60 + Number(match[3])) * 60_000;
+}
+
+/* ------------------------------------------------------------------ */
+/* Bathing water quality (EA/NRW — free, no key)                       */
+/* ------------------------------------------------------------------ */
+
+interface RawBathingWater {
+  item?: RawBathingItem | RawBathingItem[];
+}
+
+interface RawBathingItem {
+  bathingWater?: {
+    _about?: string;
+    name?: { _value?: string } | string;
+    district?: { name?: { _value?: string } | string } | string;
+    samplingPoint?: { lat?: number; long?: number };
+  };
+  sampleClassification?: { name?: { _value?: string } | string };
+  sampleDateTime?: { inXSDDateTime?: { _value?: string } } | string;
+  complianceClassification?: { name?: { _value?: string } | string };
+  latestComplianceAssessment?: { complianceClassification?: { name?: { _value?: string } | string } };
+}
+
+/** The Defra linked-data API wraps most strings as { _value }. */
+function linked(value: unknown): string | null {
+  if (typeof value === "string") return str(value);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if ("_value" in record) return str(record._value);
+    if ("name" in record) return linked(record.name);
+  }
+  return null;
+}
+
+/**
+ * Designated bathing waters near a point, with their most recent sample.
+ *
+ * Queried by National Grid reference because the Defra service indexes on
+ * eastings and northings and offers no lat/long filter — see lib/osgb.ts.
+ * Sampling runs May to September, so out of season the newest sample is
+ * legitimately months old and the annual classification is the live number.
+ */
+export async function getBathingWaters(
+  lat: number,
+  lon: number,
+  limit = 5
+): Promise<Section<BathingWater[]>> {
+  const grid = latLonToGrid(lat, lon);
+  if (!grid) {
+    return fail<BathingWater[]>(
+      "Bathing water quality is published for England and Wales only.",
+      "warn_no_data"
+    );
+  }
+
+  const url =
+    `${BWQ_BASE}/doc/bathing-water-quality/in-season/latest-nearest` +
+    `/easting/${Math.round(grid.easting)}/northing/${Math.round(grid.northing)}.json` +
+    `?_pageSize=${limit}`;
+
+  const section = await getJSON<{ result?: RawBathingWater }>(url, TTL.bathing);
+  if (!section.ok || !section.data) {
+    return { ok: false, data: null, error: section.error, code: section.code };
+  }
+
+  const items = toArray(section.data.result?.item);
+  if (items.length === 0) {
+    return fail<BathingWater[]>(
+      "No designated bathing water found near this location.",
+      "warn_no_data"
+    );
+  }
+
+  const waters = items.slice(0, limit).map((item) => {
+    const water = item.bathingWater ?? {};
+    const point = water.samplingPoint ?? {};
+    const pLat = num(point.lat);
+    const pLon = num(point.long);
+    const sampledAt =
+      typeof item.sampleDateTime === "string"
+        ? str(item.sampleDateTime)
+        : str(item.sampleDateTime?.inXSDDateTime?._value);
+
+    return {
+      id: str(water._about) ?? linked(water.name) ?? "",
+      name: linked(water.name) ?? "Bathing water",
+      district: linked(water.district),
+      lat: pLat,
+      lon: pLon,
+      distanceKM:
+        pLat !== null && pLon !== null ? distanceKM(lat, lon, pLat, pLon) : null,
+      latestSampleISO: sampledAt,
+      latestSampleClass: linked(item.sampleClassification),
+      annualClass:
+        linked(item.complianceClassification) ??
+        linked(item.latestComplianceAssessment?.complianceClassification),
+      profileUrl: str(water._about),
+    } satisfies BathingWater;
+  });
+
+  return succeed(
+    waters.sort((a, b) => (a.distanceKM ?? 1e9) - (b.distanceKM ?? 1e9))
+  );
 }
 
 /* ------------------------------------------------------------------ */

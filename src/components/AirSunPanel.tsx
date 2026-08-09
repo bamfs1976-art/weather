@@ -6,6 +6,7 @@ import {
   aqiCategory,
   dash,
   formatHourLabel,
+  formatWeekday,
   formatNumber,
   formatTime,
   isNum,
@@ -13,6 +14,7 @@ import {
   pollutantLabel,
 } from "@/lib/weather-format";
 import type { UnitSystem, WeatherOverview } from "@/lib/weather-types";
+import type { PollenBand, PollenSpecies } from "@/lib/pollen-types";
 
 export function AirSunPanel({
   overview,
@@ -115,6 +117,8 @@ export function AirSunPanel({
           )}
         </SectionBody>
       </Card>
+
+      <PollenCard overview={overview} hour12={hour12} />
 
       <Card title="Air quality forecast" subtitle="Next 24 hours">
         <SectionBody section={sections.airQualityForecast}>
@@ -264,3 +268,133 @@ function dayLength(
   const minutes = Math.round((set - rise) / 60_000);
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
+
+/* ------------------------------------------------------------------ */
+
+const POLLEN_COLOUR: Record<PollenBand, string> = {
+  none: "#64748b",
+  low: "#34d399",
+  moderate: "#fbbf24",
+  high: "#fb923c",
+  "very high": "#ef4444",
+};
+
+/**
+ * Pollen for the next few days.
+ *
+ * The headline is the worst band any species reaches in the next 24 hours,
+ * because that is the number that decides whether to take an antihistamine —
+ * an average across six species would read "low" on a day when grass alone is
+ * severe. Species are listed worst-first for the same reason.
+ */
+function PollenCard({
+  overview,
+  hour12,
+}: {
+  overview: WeatherOverview;
+  hour12: boolean;
+}) {
+  const section = overview.sections.pollen;
+  // Outside CAMS's European domain there is simply no forecast; that is not a
+  // failure worth a warning box.
+  if (!section.ok && section.code === "warn_no_data") return null;
+
+  return (
+    <Card
+      title="Pollen"
+      subtitle="Grains per cubic metre, from the CAMS European forecast"
+    >
+      <SectionBody section={section}>
+        {(pollen) => {
+          const leading = pollen.peaks[0];
+          return (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <div>
+                  <div
+                    className="text-3xl font-semibold capitalize"
+                    style={{ color: POLLEN_COLOUR[pollen.overallBand] }}
+                  >
+                    {pollen.overallBand}
+                  </div>
+                  <div className="wx-muted text-xs">peak in the next 24 hours</div>
+                </div>
+                {leading && leading.band !== "none" && (
+                  <Chip tone={leading.band === "low" ? "accent" : "warn"}>
+                    {leading.label} leading
+                  </Chip>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                {pollen.peaks.map((peak) => (
+                  <div key={peak.species}>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-sm">{peak.label}</span>
+                      <span className="wx-muted text-xs">
+                        {isNum(peak.value) ? `${peak.value.toFixed(0)} gr/m³` : dash}
+                        {" · "}
+                        <span style={{ color: POLLEN_COLOUR[peak.band] }}>
+                          {peak.band}
+                        </span>
+                      </span>
+                    </div>
+                    <Meter
+                      /* Scaled against the top of the "high" band so a bar that
+                         fills the track means genuinely severe, not merely the
+                         worst of a quiet day. */
+                      value={Math.min(100, ((peak.value ?? 0) / POLLEN_FULL[peak.species]) * 100)}
+                      color={POLLEN_COLOUR[peak.band]}
+                      label={`${peak.label} pollen`}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {pollen.hours.length > 1 && (
+                <SeriesChart
+                  /* Weekday as well as hour: this series runs four days, so
+                     hour-only labels repeat the same time on every axis tick
+                     and read as if the chart were stuck. */
+                  labels={pollen.hours.map(
+                    (hour) =>
+                      `${formatWeekday(hour.timeISO)} ${formatHourLabel(hour.timeISO, hour12)}`
+                  )}
+                  height={170}
+                  series={pollen.peaks
+                    .filter((peak) => peak.band !== "none")
+                    .slice(0, 3)
+                    .map((peak, index) => ({
+                      label: peak.label,
+                      color: ["#34d399", "#fbbf24", "#fb923c"][index],
+                      fill: index === 0,
+                      values: pollen.hours.map((hour) => hour.values[peak.species]),
+                      format: (v: number) => `${v.toFixed(0)} gr/m³`,
+                    }))}
+                  yFormat={(v) => v.toFixed(0)}
+                  ariaLabel="Pollen forecast by species"
+                />
+              )}
+
+              <p className="wx-dim text-xs">
+                Bands are the thresholds in common European use, which differ by
+                species — birch and alder routinely reach counts that would be
+                extraordinary for grass.
+              </p>
+            </div>
+          );
+        }}
+      </SectionBody>
+    </Card>
+  );
+}
+
+/** Top of the "high" band per species, used to scale the meters. */
+const POLLEN_FULL: Record<PollenSpecies, number> = {
+  grass: 150,
+  birch: 500,
+  alder: 500,
+  mugwort: 500,
+  olive: 200,
+  ragweed: 50,
+};

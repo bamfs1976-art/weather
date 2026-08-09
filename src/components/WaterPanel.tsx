@@ -89,13 +89,16 @@ export function WaterPanel({
   return (
     <div className="space-y-4">
       <FloodBlock data={data} />
+      <TideBlock data={data} hour12={hour12} />
       <MarineBlock data={data} hour12={hour12} />
+      <BathingBlock data={data} />
       <RiverBlock data={data} hour12={hour12} />
 
       <p className="wx-dim text-xs">
-        River levels and flood warnings © Environment Agency, Open Government
-        Licence — Welsh gauges in this feed are owned by Natural Resources Wales.
-        Sea state from Open-Meteo&rsquo;s 5 km European marine model.
+        River levels, tide gauges and flood warnings © Environment Agency, Open
+        Government Licence — Welsh gauges in this feed are owned by Natural
+        Resources Wales, who also publish the bathing water classifications. Sea
+        state from Open-Meteo&rsquo;s 5 km European marine model.
       </p>
     </div>
   );
@@ -380,4 +383,243 @@ function describeSea(waveHeightM: number | null | undefined): string | undefined
   if (waveHeightM < 4) return "Rough";
   if (waveHeightM < 6) return "Very rough";
   return "High";
+}
+
+/* ------------------------------------------------------------------ */
+
+/** Mean interval between successive high waters (the M2 lunar semidiurnal tide). */
+const TIDAL_CYCLE_MS = (12 * 60 + 25.2) * 60_000;
+
+/**
+ * Project a past turning point forward to the next one of the same kind.
+ *
+ * This is arithmetic on the lunar interval, not a tidal prediction: it takes no
+ * account of weather, surge, or the shallow-water effects that make the Bristol
+ * Channel's range what it is. Good to roughly ten minutes over a day, which is
+ * fine for "when is the beach back" and useless for anything involving a boat —
+ * hence the wording on the card.
+ */
+function projectNext(last: { timeISO: string; levelM: number } | undefined) {
+  if (!last) return null;
+  const base = Date.parse(last.timeISO);
+  if (Number.isNaN(base)) return null;
+  let next = base;
+  const now = Date.now();
+  // Guard the loop: a timestamp far enough in the past to need hundreds of
+  // steps means something is wrong with the feed, not with the tide.
+  for (let i = 0; next <= now && i < 100; i++) next += TIDAL_CYCLE_MS;
+  if (next <= now) return null;
+
+  /*
+   * Carry the offset the reading arrived with rather than returning UTC.
+   * toISOString() would render a BST tide an hour early — which for a tide time
+   * is not a cosmetic problem, and is the same mistake that put the old tide
+   * card an hour out.
+   */
+  const zone = last.timeISO.match(/(Z|[+-]\d{2}:\d{2})$/)?.[1] ?? "Z";
+  if (zone === "Z") return new Date(next).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const sign = zone.startsWith("-") ? -1 : 1;
+  const offsetMs =
+    sign * (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(4, 6))) * 60_000;
+  return (
+    new Date(next + offsetMs).toISOString().replace(/\.\d{3}Z$/, "") + zone
+  );
+}
+
+function TideBlock({ data, hour12 }: { data: WaterPayload; hour12: boolean }) {
+  const section = data.sections.tides;
+  // Inland locations have no tide gauge; that is expected, not an error.
+  if (!section.ok && section.code === "warn_no_data") return null;
+
+  return (
+    <Card
+      title="Tide"
+      subtitle="Observed sea level from the nearest Environment Agency gauge"
+    >
+      <SectionBody section={section}>
+        {(tide) => {
+          const highs = tide.extremes.filter((e) => e.kind === "high");
+          const lows = tide.extremes.filter((e) => e.kind === "low");
+          const lastHigh = highs[highs.length - 1];
+          const lastLow = lows[lows.length - 1];
+          const nextHigh = projectNext(lastHigh);
+          const nextLow = projectNext(lastLow);
+
+          return (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Metric
+                  label="Level now"
+                  icon="🌊"
+                  value={
+                    isNum(tide.latest?.levelM)
+                      ? `${tide.latest.levelM.toFixed(2)} m`
+                      : dash
+                  }
+                  hint={
+                    tide.rising === null
+                      ? "at the turn"
+                      : tide.rising
+                        ? "rising"
+                        : "falling"
+                  }
+                />
+                <Metric
+                  label="Last high"
+                  value={lastHigh ? formatTime(lastHigh.timeISO, hour12) : dash}
+                  hint={lastHigh ? `${lastHigh.levelM.toFixed(2)} m` : undefined}
+                />
+                <Metric
+                  label="Last low"
+                  value={lastLow ? formatTime(lastLow.timeISO, hour12) : dash}
+                  hint={lastLow ? `${lastLow.levelM.toFixed(2)} m` : undefined}
+                />
+                <Metric
+                  label="Range (48h)"
+                  value={isNum(tide.rangeM) ? `${tide.rangeM.toFixed(2)} m` : dash}
+                  hint="peak to trough"
+                />
+              </div>
+
+              {(nextHigh || nextLow) && (
+                <div className="wx-inset px-3 py-2.5">
+                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+                    {nextHigh && (
+                      <span>
+                        Next high water around{" "}
+                        <span className="font-medium">
+                          {formatTime(nextHigh, hour12)}
+                        </span>{" "}
+                        <span className="wx-muted">({relativeFromNow(nextHigh)})</span>
+                      </span>
+                    )}
+                    {nextLow && (
+                      <span>
+                        Next low around{" "}
+                        <span className="font-medium">
+                          {formatTime(nextLow, hour12)}
+                        </span>{" "}
+                        <span className="wx-muted">({relativeFromNow(nextLow)})</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="wx-dim mt-1 text-[11px]">
+                    Projected forward from the last observed turn by the mean
+                    lunar interval — an estimate, not a tidal prediction. Do not
+                    navigate by it.
+                  </p>
+                </div>
+              )}
+
+              <SeriesChart
+                labels={tide.readings.map((r) => formatTime(r.timeISO, hour12))}
+                height={180}
+                series={[
+                  {
+                    label: "Sea level (m)",
+                    color: "#38bdf8",
+                    fill: true,
+                    values: tide.readings.map((r) => r.levelM),
+                    format: (v) => `${v.toFixed(2)} m`,
+                  },
+                ]}
+                yFormat={(v) => v.toFixed(1)}
+                ariaLabel="Observed sea level over the last 48 hours"
+              />
+
+              <p className="wx-dim text-xs">
+                {tide.label}
+                {isNum(tide.distanceKM) ? ` · ${tide.distanceKM.toFixed(1)} km away` : ""}
+                {" · readings every 15 minutes"}
+              </p>
+            </div>
+          );
+        }}
+      </SectionBody>
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+/** Colours for the four statutory bathing water classifications. */
+function bathingTone(classification: string | null): string {
+  switch ((classification ?? "").toLowerCase()) {
+    case "excellent":
+      return "#34d399";
+    case "good":
+      return "#38bdf8";
+    case "sufficient":
+      return "#fbbf24";
+    case "poor":
+      return "#ef4444";
+    default:
+      return "#64748b";
+  }
+}
+
+function BathingBlock({ data }: { data: WaterPayload }) {
+  const section = data.sections.bathing;
+  if (!section.ok && section.code === "warn_no_data") return null;
+
+  return (
+    <Card
+      title="Bathing water"
+      subtitle="Designated beaches nearby, sampled May to September"
+    >
+      <SectionBody section={section}>
+        {(waters) => (
+          <div className="space-y-2">
+            {waters.map((water) => (
+              <div key={water.id} className="wx-inset p-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <span className="font-medium">{water.name}</span>
+                    {water.district && (
+                      <span className="wx-muted text-sm"> · {water.district}</span>
+                    )}
+                  </div>
+                  {isNum(water.distanceKM) && (
+                    <span className="wx-dim text-xs">
+                      {water.distanceKM.toFixed(1)} km away
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {water.annualClass && (
+                    <span
+                      className="rounded-full px-2.5 py-0.5 text-xs font-medium"
+                      style={{
+                        color: bathingTone(water.annualClass),
+                        background: `${bathingTone(water.annualClass)}1a`,
+                      }}
+                    >
+                      {water.annualClass} overall
+                    </span>
+                  )}
+                  {water.latestSampleClass && (
+                    <span className="wx-muted text-xs">
+                      latest sample{" "}
+                      <span style={{ color: bathingTone(water.latestSampleClass) }}>
+                        {water.latestSampleClass}
+                      </span>
+                      {water.latestSampleISO
+                        ? ` · ${formatDayMonth(water.latestSampleISO)}`
+                        : ""}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+            <p className="wx-dim text-xs">
+              The overall class comes from four years of samples; a single
+              sample after heavy rain can be much worse than it without changing
+              the classification.
+            </p>
+          </div>
+        )}
+      </SectionBody>
+    </Card>
+  );
 }

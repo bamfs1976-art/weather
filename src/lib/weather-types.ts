@@ -1,3 +1,4 @@
+import type { PollenForecast } from "./pollen-types";
 /**
  * Types for the Xweather (Vaisala) Weather API responses used by the app.
  *
@@ -376,6 +377,9 @@ export interface WeatherOverview {
     lightning: Section<LightningSummaryResponse>;
     phrase: Section<{ periods: { text?: string; weatherPrimary?: string }[] }>;
     recent: Section<ConditionsResponse>;
+    /** Not Xweather — CAMS pollen via Open-Meteo, folded in here so the
+     *  dashboard still loads everything in one request. */
+    pollen: Section<PollenForecast>;
   };
 }
 
