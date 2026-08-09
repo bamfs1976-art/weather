@@ -201,9 +201,15 @@ async function probe(product: Product): Promise<ProductDiscovery> {
             /* neither XML nor JSON — the sample is what there is to go on */
           }
         }
-        base.attempts.push(attempt);
+        /*
+         * On success the failed attempts are dropped. Once the endpoint is
+         * known, the paths that did not answer are noise — and this output gets
+         * read on a phone, where sixteen attempt objects with body samples bury
+         * the one line that matters.
+         */
         return {
           ...base,
+          attempts: [],
           endpoint: url,
           items: attempt.items ?? null,
           tileTemplate: attempt.tileTemplate ?? null,
