@@ -61,7 +61,9 @@ src/
 | `XWEATHER_CLIENT_ID` | Xweather application ID from https://account.xweather.com/ |
 | `XWEATHER_CLIENT_SECRET` | Xweather application secret |
 | `METOFFICE_API_KEY` | Optional. Met Office DataHub site-specific, for the Second opinion card |
-| `METOFFICE_MAP_API_KEY` | Optional. Met Office DataHub map-images — a separate subscription |
+| `METOFFICE_MAP_API_KEY` | Optional. DataHub map-images — separate subscription, 1000 images/day |
+| `METOFFICE_OBS_API_KEY` | Optional. DataHub land observations — separate subscription, 360 calls/day |
+| `METOFFICE_ATMO_API_KEY` | Optional. DataHub atmospheric models — see the note below before using |
 
 Copy `.env.example` to `.env`. Without them the app still renders — every route
 returns a clear "credentials are not configured" notice instead of crashing.
@@ -127,12 +129,23 @@ nowcast, no radar rasters and no archive, which is most of what this app does.
   Anything more than 30 minutes apart is dropped rather than fudged.
 - Without a key the section returns `no_credentials` and the card explains how
   to switch it on, which is a setup step rather than an error.
-- **Map images are a separate product, key and subscription** (1000 images a
-  day free). `lib/metoffice-maps.ts` does not render anything yet: the request
-  path is not documented anywhere reachable, so it asks the service for its WMTS
-  capabilities and `/api/diagnostics` reports the layer list and tile template
-  it finds. Write the client from that answer — do not guess a tile URL, which
-  is the mistake that took the Xweather map down for five rounds.
+- **Each DataHub product is a separate subscription and key.** Four are in
+  play: site-specific (integrated), map images, land observations, atmospheric
+  models. Only site-specific has a request path that could be established from
+  outside; `lib/metoffice-discovery.ts` asks the other three where they live and
+  `/api/diagnostics` reports the endpoint, identifiers and — for WMTS — the tile
+  template under `metofficeProducts`. **Write each client from that answer.**
+  Do not guess a path: a wrong path and an unsubscribed product both look like
+  "no data", and guessing raster URLs is what took the Xweather map down for
+  five rounds. The verdict distinguishes the two — all 404s means the path is
+  wrong, a 401 means the path was right and the key was not.
+- **Atmospheric models are a poor fit and should probably stay unintegrated.**
+  They deliver gridded GRIB2 against orders placed in the portal; the files run
+  to hundreds of megabytes and GRIB2 decoding is not something a serverless
+  function should attempt. The discovery entry exists so the subscription is
+  visible, not as a step towards using it.
+- Probing costs real quota — land observations allows 360 calls a day — so each
+  product stops at its first success and diagnostics is the only caller.
 
 ## Other open data (no keys)
 
