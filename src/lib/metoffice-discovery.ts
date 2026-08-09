@@ -303,6 +303,50 @@ async function probe(product: Product): Promise<ProductDiscovery> {
   };
 }
 
-export async function discoverDataHub(): Promise<ProductDiscovery[]> {
-  return Promise.all(PRODUCTS.map(probe));
+/**
+ * A slug supplied at request time, tried ahead of the built-in candidates.
+ *
+ * Twelve probes have failed to find land observations, and the next guess is
+ * worth less than the answer sitting on the user's DataHub product page. This
+ * lets them try it straight from the browser —
+ * `/api/diagnostics?p=Swansea&product=land-observations-1.0.0` — instead of
+ * waiting on a code change and a redeploy to test a one-word hypothesis.
+ *
+ * Only `[a-z0-9-]` survives, and the URL is always rebuilt against HOST: the
+ * value reaches an outbound fetch that carries the API key, so it is matched
+ * against a character class rather than merely escaped.
+ */
+const SEGMENT = /^[a-z0-9-]{1,64}$/;
+
+function parseOverride(raw: string | null | undefined): Product["slugs"] | null {
+  if (!raw) return null;
+  const trimmed = raw.trim().toLowerCase();
+  return SEGMENT.test(trimmed) ? [trimmed] : null;
+}
+
+export function overrideVersion(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim().toLowerCase();
+  return /^[a-z0-9.]{1,16}$/.test(trimmed) ? trimmed : null;
+}
+
+export async function discoverDataHub(options?: {
+  /** Product slug to try first, for the product whose slug is still unknown. */
+  productSlug?: string | null;
+  /** Version segment to try first, since not every product is at 1.0.0. */
+  productVersion?: string | null;
+}): Promise<ProductDiscovery[]> {
+  const extraSlug = parseOverride(options?.productSlug);
+  const extraVersion = overrideVersion(options?.productVersion);
+
+  const products = PRODUCTS.map((product) => {
+    if (product.id !== "observations" || (!extraSlug && !extraVersion)) return product;
+    return {
+      ...product,
+      slugs: [...(extraSlug ?? []), ...product.slugs],
+      versions: [...(extraVersion ? [extraVersion] : []), ...product.versions],
+    };
+  });
+
+  return Promise.all(products.map(probe));
 }

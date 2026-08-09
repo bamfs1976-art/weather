@@ -221,7 +221,15 @@ export async function GET(request: NextRequest) {
    * so this asks each service where it lives rather than guessing a URL — the
    * answers are what the real clients get written against.
    */
-  const metofficeProducts = await discoverDataHub();
+  const metofficeProducts = await discoverDataHub({
+    /*
+     * `?product=` and `?version=` let a slug read off the DataHub product page
+     * be tried from the browser, without a code change and a redeploy per
+     * guess. Land observations is the one still unresolved.
+     */
+    productSlug: request.nextUrl.searchParams.get("product"),
+    productVersion: request.nextUrl.searchParams.get("version"),
+  });
 
   const all = [...results, ...water];
 

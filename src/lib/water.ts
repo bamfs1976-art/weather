@@ -491,7 +491,8 @@ export async function getTideGauge(
     return { ok: false, data: null, error: stationSection.error, code: stationSection.code };
   }
 
-  const nearest = toArray(stationSection.data.items)
+  const found = toArray(stationSection.data.items);
+  const nearest = found
     .map((item) => {
       const sLat = num(firstOf(item.lat));
       const sLon = num(firstOf(item.long));
@@ -516,70 +517,116 @@ export async function getTideGauge(
     return fail<TideGauge>("The nearest tide gauge has no station id.", "bad_response");
   }
 
-  // 48 hours at four readings an hour, oldest first, so the series can be
-  // charted directly and the turning points found by walking it.
+  const label = str(firstOf(nearest.item.label)) ?? notation;
+  /* Enough to tell a wrong station from a silent one in the next report. */
+  const where = `${label} (${notation}), ${
+    nearest.distance === null ? "distance unknown" : `${nearest.distance.toFixed(1)} km`
+  }, ${found.length} gauge${found.length === 1 ? "" : "s"} in range`;
+
   /*
-   * Try more than one documented form and keep the first that yields a usable
-   * series. The station lookup succeeds and the readings come back empty often
-   * enough — reported live as "not currently reporting" while the gauge was
-   * plainly fine — that pinning this on one URL shape is a guess, and guessing
-   * URL shapes has cost this project a lot of rounds. `via` records which form
-   * worked so diagnostics can report it rather than leaving it a mystery.
-   */
-  /*
-   * 24 hours rather than 48, and 100 rows rather than 250. The wider query
-   * timed out in production: two tidal cycles is all the turning-point finder
-   * needs, and asking the Environment Agency for a quarter of the rows is the
-   * difference between answering and not.
-   */
-  /*
-   * One request, twelve hours, sixty rows.
+   * Readings come from the *measure*, not the station.
    *
-   * This started as 48 hours at 250 rows, which timed out; then as a chain of
-   * three fallbacks, which timed out *and* pushed the whole burst of
-   * Environment Agency calls over what the service will absorb — river levels,
-   * which had been working for weeks, started reporting no gauges at all. The
-   * fallbacks were treating a throughput problem as a URL problem and making it
-   * worse. Twelve hours still spans a full tidal cycle, which is all the
-   * turning-point finder needs to place a high and a low.
+   * The history here is worth keeping. Station-scoped readings with `since=`
+   * went through 48h/250 rows (timed out), a chain of three fallbacks (timed
+   * out and throttled the Environment Agency badly enough to take river levels
+   * down with it), then 13h/60 rows, which finally answered quickly — and
+   * returned an empty list. Meanwhile `getRiverStations` has been calling
+   * `/id/stations/{id}/readings?latest` successfully throughout.
+   *
+   * So the station route works and `since=` on it does not, which is the one
+   * thing every previous attempt held constant. The documented route for a
+   * time series is the measure: `/id/measures/{id}/readings?since=`. Finding
+   * the measure costs one more request, but it is the same station->measures
+   * hop the river code already makes in production, so it is the proven half.
+   *
+   * Thirteen hours spans a full tidal cycle, which is all the turning-point
+   * finder needs to place a high and a low. One attempt per hop, no fallback
+   * chains — that is what caused the throttling last time.
    */
   const since = new Date(Date.now() - 13 * 3600_000).toISOString().slice(0, 19) + "Z";
-  const station = `${EA_BASE}/id/stations/${encodeURIComponent(notation)}`;
-  /*
-   * `_sorted` is dropped: parseReadings sorts by timestamp anyway, so asking
-   * the Environment Agency to order the rows as well buys nothing and is work
-   * it has to do before it can answer.
-   */
-  const via = "since";
 
   const t1 = Date.now();
+  const measureSection = stage(
+    await getJSON<{ items?: RawMeasure | RawMeasure[] }>(
+      `${EA_BASE}/id/stations/${encodeURIComponent(notation)}/measures`,
+      TTL.readings,
+      {},
+      Math.min(3_000, left())
+    ),
+    "tide measure lookup",
+    Date.now() - t1
+  );
+  if (!measureSection.ok || !measureSection.data) {
+    return { ok: false, data: null, error: measureSection.error, code: measureSection.code };
+  }
+
+  /*
+   * A tide gauge's series is a level in metres above ordnance datum. Match on
+   * that rather than on an exact qualifier string, because "Tidal Level" is not
+   * the only spelling in the feed and an unmatched qualifier would look exactly
+   * like a silent gauge.
+   */
+  const measures = toArray(measureSection.data.items);
+  const tidal =
+    measures.find((m) => /tidal/i.test(str(m.qualifier) ?? "")) ??
+    measures.find((m) => /mAOD/i.test(str(m.unitName) ?? "")) ??
+    measures.find((m) => str(m.parameter) === "level");
+
+  /*
+   * The feed's `@id` is an absolute http:// URI on the live host. Rebuilding it
+   * against EA_BASE keeps the request on https and lets the offline stub see
+   * it, rather than the test quietly reaching for the real service.
+   */
+  const measureRef = str(tidal?.["@id"]) ?? "";
+  const measureName = measureRef.split("/id/measures/").pop() ?? "";
+  const measureId = measureName
+    ? `${EA_BASE}/id/measures/${encodeURIComponent(measureName)}`
+    : "";
+  if (!measureId) {
+    return fail<TideGauge>(
+      `${where}, but none of its ${measures.length} measures is a level series` +
+        (measures.length
+          ? ` (saw ${measures
+              .map((m) => str(m.qualifier) ?? str(m.parameter) ?? "?")
+              .slice(0, 4)
+              .join(", ")}).`
+          : "."),
+      "warn_no_data"
+    );
+  }
+
+  const via = "measure+since";
+
+  const t2 = Date.now();
   const readingSection = stage(
     await getJSON<{ items?: RawReading | RawReading[] }>(
-      `${station}/readings?since=${encodeURIComponent(since)}&_limit=60`,
+      `${measureId}/readings?since=${encodeURIComponent(since)}&_limit=60`,
       TTL.readings,
       {},
       left()
     ),
     "tide readings query",
-    Date.now() - t1
+    Date.now() - t2
   );
 
-  const readings = readingSection.ok && readingSection.data
-    ? parseReadings(readingSection.data.items, offsetMinutes)
-    : [];
-  const lastError: Section<TideGauge> | null = readingSection.ok
-    ? null
-    : { ok: false, data: null, error: readingSection.error, code: readingSection.code };
+  if (!readingSection.ok) {
+    return { ok: false, data: null, error: readingSection.error, code: readingSection.code };
+  }
 
-  if (readings.length === 0 && lastError) return lastError;
+  const rawRows = toArray(readingSection.data?.items).length;
+  const readings = parseReadings(readingSection.data?.items, offsetMinutes);
 
   if (readings.length < 4) {
-    return fail<TideGauge>(
-      readings.length === 0
-        ? "The nearest tide gauge returned no readings."
-        : `The nearest tide gauge returned only ${readings.length} readings — too few to find high and low water.`,
-      "warn_no_data"
-    );
+    /*
+     * Say which of the three hops came up short and with what, so "no readings"
+     * stops being a dead end. Rows arriving but not parsing is a different
+     * fault from no rows at all, and the two were indistinguishable before.
+     */
+    const detail =
+      rawRows === 0
+        ? `${where}. Its level measure returned no rows for the last 13 hours`
+        : `${where}. Its level measure returned ${rawRows} rows but only ${readings.length} had both a time and a value`;
+    return fail<TideGauge>(`${detail} (${measureId}).`, "warn_no_data");
   }
 
   const levels = readings.map((r) => r.levelM);
@@ -588,7 +635,7 @@ export async function getTideGauge(
 
   return succeed({
     id: notation,
-    label: str(firstOf(nearest.item.label)) ?? notation,
+    label,
     distanceKM: nearest.distance,
     unit: "m",
     latest,

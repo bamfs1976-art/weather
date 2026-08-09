@@ -154,8 +154,12 @@ nowcast, no radar rasters and no archive, which is most of what this app does.
 - **Land observations is the one worth having** — real hourly measurements from
   ~150 stations for the past 48 hours, free at 360 calls a day, and the only
   source here that is a measurement rather than a model. Its product slug is
-  still unknown: six spellings returned product-not-found. Get the URL from the
-  portal rather than adding a seventh guess.
+  still unknown: six spellings × two versions all returned product-not-found.
+  **Do not add a thirteenth guess.** `/api/diagnostics?product=<slug>&version=`
+  tries a slug read off the DataHub product page without a code change, which
+  is the cheap way to settle it. The value reaches a fetch carrying the API key,
+  so it is validated against `[a-z0-9-]{1,64}` and the URL is always rebuilt
+  against HOST — never interpolated raw.
 - **The version segment is not always `1.0.0`.** Site-specific lives at
   `/sitespecific/v0/point/hourly`, so a slug that returns product-not-found
   under one version has not been ruled out until the others are tried; pass one
@@ -182,11 +186,24 @@ card and nothing else. All are covered by `/api/diagnostics`.
   (`findTurningPoints`). Predicted tide tables need an Admiralty subscription.
   The "next high water" line projects forward by the mean lunar interval and is
   labelled an estimate on the card — do not quietly promote it to a prediction.
-- **The tide gauge is two sequential EA requests and they share one 8s budget.**
+- **Tide readings come from the measure, not the station.**
+  `/id/stations/{id}/readings?since=` answers 200 with an empty list, which is
+  why the card kept reporting a silent gauge; `getRiverStations` has meanwhile
+  been calling the same route with `?latest` successfully throughout, so it is
+  `since=` that the station route does not honour. The series is fetched from
+  `/id/measures/{id}/readings?since=` instead, via the station→measures hop the
+  river code already proves in production. The measure is picked by qualifier,
+  then unit (`mAOD`), then parameter, so a spelling change cannot look like a
+  dead gauge.
+- **The three hops share one 8s budget and every failure names its hop.**
   Separate 8s and 6s timeouts totalled 14s against Netlify's 10s ceiling, so a
   merely slow lookup guaranteed the readings query was killed and blamed. The
-  failure message now names the stage and its elapsed time, because "timeout"
-  alone never said which half was slow.
+  messages now carry the station, its distance, the measure URI and the raw row
+  count — "no readings" was a dead end three rounds running.
+- **No fallback chains here.** Trying several URL shapes per hop is what pushed
+  the burst of Environment Agency calls past what the service absorbs and took
+  river levels down with it. One attempt per hop; if it fails, the message says
+  what came back.
 - **Bathing water returns 403 and the card removes itself.** Four URL shapes
   were tried, with and without a User-Agent, and every one was refused while
   flood-monitoring — a different service on the same host — answered normally.
