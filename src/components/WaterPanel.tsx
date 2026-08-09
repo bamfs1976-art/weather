@@ -12,6 +12,8 @@ import {
   isNum,
   relativeFromNow,
 } from "@/lib/weather-format";
+import { ThermometerIcon, WaveIcon } from "@/components/icons";
+
 import type {
   MarineConditions,
   RiverStation,
@@ -301,7 +303,7 @@ function MarineBlock({ data, hour12 }: { data: WaterPayload; hour12: boolean }) 
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <Metric
                   label="Wave height"
-                  icon="🌊"
+                  icon={<WaveIcon />}
                   value={
                     isNum(current?.waveHeightM)
                       ? `${current.waveHeightM.toFixed(1)} m`
@@ -327,7 +329,7 @@ function MarineBlock({ data, hour12 }: { data: WaterPayload; hour12: boolean }) 
                 />
                 <Metric
                   label="Sea temperature"
-                  icon="🌡️"
+                  icon={<ThermometerIcon />}
                   value={
                     isNum(current?.seaTempC)
                       ? `${current.seaTempC.toFixed(1)}°C`
@@ -372,6 +374,15 @@ function MarineBlock({ data, hour12 }: { data: WaterPayload; hour12: boolean }) 
       </SectionBody>
     </Card>
   );
+}
+
+/** How much time a reading series actually covers, for labelling it. */
+function spanHours(readings: { timeISO: string }[] | undefined): string {
+  if (!readings || readings.length < 2) return "observed";
+  const first = Date.parse(readings[0].timeISO);
+  const last = Date.parse(readings[readings.length - 1].timeISO);
+  if (!Number.isFinite(first) || !Number.isFinite(last) || last <= first) return "observed";
+  return `${Math.round((last - first) / 3_600_000)}h`;
 }
 
 /** Douglas-style shorthand for what a wave height actually feels like. */
@@ -451,7 +462,7 @@ function TideBlock({ data, hour12 }: { data: WaterPayload; hour12: boolean }) {
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <Metric
                   label="Level now"
-                  icon="🌊"
+                  icon={<WaveIcon />}
                   value={
                     isNum(tide.latest?.levelM)
                       ? `${tide.latest.levelM.toFixed(2)} m`
@@ -476,7 +487,14 @@ function TideBlock({ data, hour12 }: { data: WaterPayload; hour12: boolean }) {
                   hint={lastLow ? `${lastLow.levelM.toFixed(2)} m` : undefined}
                 />
                 <Metric
-                  label="Range (48h)"
+                  /*
+                   * Derived, not hardcoded. This still said "48h" long after
+                   * the query had been cut to 24 hours and then 13 to stop it
+                   * timing out, so the card was claiming a window more than
+                   * three times the one it was drawing. A label that reads its
+                   * own data cannot drift again.
+                   */
+                  label={`Range (${spanHours(tide.readings)})`}
                   value={isNum(tide.rangeM) ? `${tide.rangeM.toFixed(2)} m` : dash}
                   hint="peak to trough"
                 />

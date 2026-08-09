@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Card, Chip, Meter, Metric, SectionBody } from "./ui";
 import { SeriesChart } from "./Chart";
+import { CloudRainIcon, ConditionGlyph, WindIcon } from "@/components/icons";
 import {
   dash,
   formatDayMonth,
@@ -17,7 +18,6 @@ import {
   isNum,
   pickUnit,
   tempValue,
-  weatherEmoji,
 } from "@/lib/weather-format";
 import type { UnitSystem, WeatherOverview, WeatherPeriod } from "@/lib/weather-types";
 
@@ -116,15 +116,20 @@ export function ForecastPanel({
                           </span>
                         </span>
                         <span className="w-8 shrink-0 text-center text-xl" aria-hidden>
-                          {weatherEmoji(period.icon, period.weatherPrimaryCoded)}
+                          <ConditionGlyph icon={period.icon} coded={period.weatherPrimaryCoded} />
                         </span>
                         <span className="wx-muted hidden min-w-0 flex-1 truncate text-sm sm:block">
                           {period.weather ?? period.weatherPrimary ?? dash}
                         </span>
                         <span className="w-14 shrink-0 text-right text-xs wx-cold">
-                          {isNum(period.pop) && period.pop > 0
-                            ? `☔ ${period.pop}%`
-                            : ""}
+                          {isNum(period.pop) && period.pop > 0 ? (
+                            <span className="inline-flex items-center justify-end gap-1">
+                              <CloudRainIcon className="h-3 w-3" />
+                              {period.pop}%
+                            </span>
+                          ) : (
+                            ""
+                          )}
                         </span>
                         <span className="flex w-36 shrink-0 items-center gap-2">
                           <span className="wx-muted w-8 text-right text-sm">
@@ -183,7 +188,7 @@ export function ForecastPanel({
                       </Chip>
                     </div>
                     <div className="my-1.5 text-3xl" aria-hidden>
-                      {weatherEmoji(period.icon, period.weatherPrimaryCoded)}
+                      <ConditionGlyph icon={period.icon} coded={period.weatherPrimaryCoded} />
                     </div>
                     <div className="text-xl font-semibold">
                       {formatTemp(
@@ -196,9 +201,12 @@ export function ForecastPanel({
                       {period.weather ?? period.weatherPrimary ?? dash}
                     </p>
                     <div className="wx-dim mt-2 space-y-0.5 text-[11px]">
-                      <div>☔ {formatPercent(period.pop)}</div>
-                      <div>
-                        💨{" "}
+                      <div className="flex items-center gap-1">
+                        <CloudRainIcon className="h-3 w-3 shrink-0" />
+                        {formatPercent(period.pop)}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <WindIcon className="h-3 w-3 shrink-0" />
                         {formatSpeed(
                           period.windSpeedKPH ?? period.windSpeedMaxKPH,
                           period.windSpeedMPH ?? period.windSpeedMaxMPH,

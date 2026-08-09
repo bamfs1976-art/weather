@@ -150,13 +150,22 @@ export function Metric({
   label: string;
   value: ReactNode;
   hint?: ReactNode;
-  icon?: string;
+  /*
+   * ReactNode, not string. Typed as `string` this could only ever hold an
+   * emoji, which is why emoji survived here after every other surface moved to
+   * the icon set — the type was quietly enforcing the thing being removed.
+   */
+  icon?: ReactNode;
   accent?: string;
 }) {
   return (
     <div className="wx-inset px-3 py-2.5">
       <div className="wx-muted flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide">
-        {icon && <span aria-hidden>{icon}</span>}
+        {icon && (
+          <span aria-hidden className="inline-flex items-center [&>svg]:h-3.5 [&>svg]:w-3.5">
+            {icon}
+          </span>
+        )}
         <span>{label}</span>
       </div>
       <div

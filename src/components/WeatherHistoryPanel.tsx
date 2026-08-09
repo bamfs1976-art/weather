@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, Metric, Notice, SectionBody, Skeleton } from "./ui";
 import { SeriesChart } from "./Chart";
+import { CloudRainIcon, ConditionGlyph, MoonPhaseIcon, SunriseIcon, SunsetIcon, ThermometerHighIcon, ThermometerLowIcon, WindIcon } from "@/components/icons";
 import {
   dash,
   formatDayMonth,
@@ -15,9 +16,7 @@ import {
   formatTime,
   isNum,
   isoDateOnly,
-  moonPhaseEmoji,
   pickUnit,
-  weatherEmoji,
 } from "@/lib/weather-format";
 import type {
   ArchiveDayPayload,
@@ -355,7 +354,7 @@ export function WeatherHistoryPanel({
                             </td>
                             <td className="wx-muted py-1.5 pr-3">
                               <span className="mr-1.5" aria-hidden>
-                                {weatherEmoji(period.icon, period.weatherPrimaryCoded)}
+                                <ConditionGlyph icon={period.icon} coded={period.weatherPrimaryCoded} />
                               </span>
                               {period.weatherPrimary ?? period.weather ?? dash}
                             </td>
@@ -520,13 +519,13 @@ function RangeStats({
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
       <Metric
         label="Warmest day"
-        icon="🔥"
+        icon={<ThermometerHighIcon />}
         value={hottest ? `${hottest.v.toFixed(1)}°` : dash}
         hint={hottest ? formatDayMonth(hottest.iso) : undefined}
       />
       <Metric
         label="Coldest night"
-        icon="🧊"
+        icon={<ThermometerLowIcon />}
         value={coldest ? `${coldest.v.toFixed(1)}°` : dash}
         hint={coldest ? formatDayMonth(coldest.iso) : undefined}
       />
@@ -540,7 +539,7 @@ function RangeStats({
       />
       <Metric
         label="Total precipitation"
-        icon="🌧️"
+        icon={<CloudRainIcon />}
         value={`${totalRain.toFixed(units === "metric" ? 1 : 2)} ${precipUnit}`}
         hint={`${wetDays} day${wetDays === 1 ? "" : "s"} with rain`}
       />
@@ -553,7 +552,7 @@ function RangeStats({
       />
       <Metric
         label="Peak wind"
-        icon="💨"
+        icon={<WindIcon />}
         value={winds.length ? `${Math.max(...winds).toFixed(0)} ${speedUnit}` : dash}
       />
       <Metric label="Days in range" value={String(periods.length)} />
@@ -577,11 +576,11 @@ function ArchiveDay({
     <div className="space-y-4">
       {sun && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Metric label="Sunrise" icon="🌅" value={formatTime(sun.sun?.riseISO, hour12)} />
-          <Metric label="Sunset" icon="🌇" value={formatTime(sun.sun?.setISO, hour12)} />
+          <Metric label="Sunrise" icon={<SunriseIcon />} value={formatTime(sun.sun?.riseISO, hour12)} />
+          <Metric label="Sunset" icon={<SunsetIcon />} value={formatTime(sun.sun?.setISO, hour12)} />
           <Metric
             label="Moon phase"
-            icon={moonPhaseEmoji(sun.moon?.phase?.phase)}
+            icon={<MoonPhaseIcon phase={sun.moon?.phase?.phase} />}
             value={sun.moon?.phase?.name ?? dash}
             hint={
               isNum(sun.moon?.phase?.illum)
@@ -650,7 +649,7 @@ function ArchiveDay({
                 </td>
                 <td className="wx-muted py-1.5 pr-3">
                   <span className="mr-1.5" aria-hidden>
-                    {weatherEmoji(period.icon, period.weatherPrimaryCoded)}
+                    <ConditionGlyph icon={period.icon} coded={period.weatherPrimaryCoded} />
                   </span>
                   {period.weather ?? period.weatherPrimary ?? dash}
                 </td>

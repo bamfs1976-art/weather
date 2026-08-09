@@ -2,6 +2,7 @@
 
 import { Card, Chip, Meter, Metric, Notice, SectionBody } from "./ui";
 import { SeriesChart } from "./Chart";
+import { ClockIcon, MoonPhaseIcon, SunIcon, SunriseIcon, SunsetIcon } from "@/components/icons";
 import {
   aqiCategory,
   dash,
@@ -10,7 +11,6 @@ import {
   formatNumber,
   formatTime,
   isNum,
-  moonPhaseEmoji,
   pollutantLabel,
 } from "@/lib/weather-format";
 import type { UnitSystem, WeatherOverview } from "@/lib/weather-types";
@@ -184,12 +184,12 @@ export function AirSunPanel({
           {() => (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <Metric label="Sunrise" icon="🌅" value={formatTime(sun?.riseISO, hour12)} />
-                <Metric label="Solar noon" icon="☀️" value={formatTime(sun?.transitISO, hour12)} />
-                <Metric label="Sunset" icon="🌇" value={formatTime(sun?.setISO, hour12)} />
+                <Metric label="Sunrise" icon={<SunriseIcon />} value={formatTime(sun?.riseISO, hour12)} />
+                <Metric label="Solar noon" icon={<SunIcon />} value={formatTime(sun?.transitISO, hour12)} />
+                <Metric label="Sunset" icon={<SunsetIcon />} value={formatTime(sun?.setISO, hour12)} />
                 <Metric
                   label="Day length"
-                  icon="⏱️"
+                  icon={<ClockIcon />}
                   value={dayLength(sun?.riseISO, sun?.setISO)}
                 />
               </div>
@@ -233,7 +233,7 @@ export function AirSunPanel({
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <Metric
                     label="Phase"
-                    icon={moonPhaseEmoji(moon?.phase?.phase)}
+                    icon={<MoonPhaseIcon phase={moon?.phase?.phase} />}
                     value={moon?.phase?.name ?? dash}
                   />
                   <Metric

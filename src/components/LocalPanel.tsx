@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, Chip, Meter, Metric, Notice, SectionBody, Skeleton } from "./ui";
 import { SeriesChart } from "./Chart";
+import { ListIcon } from "@/components/icons";
 import {
   dash,
   formatDayMonth,
@@ -269,7 +270,7 @@ function CrimeBlock({ data }: { data: LocalPayload }) {
           return (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <Metric label="Reports" icon="📋" value={String(crime.total)} />
+                <Metric label="Reports" icon={<ListIcon />} value={String(crime.total)} />
                 <Metric
                   label="Most common"
                   value={crime.categories[0]?.label ?? dash}

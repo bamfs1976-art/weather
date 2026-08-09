@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Card, Metric, SectionBody } from "./ui";
 import { SeriesChart } from "./Chart";
+import { CloudRainIcon, ConditionGlyph, ThermometerHighIcon, ThermometerLowIcon, WindIcon } from "@/components/icons";
 import {
   dash,
   formatDistance,
@@ -15,7 +16,6 @@ import {
   isNum,
   pickUnit,
   pressureTrend,
-  weatherEmoji,
 } from "@/lib/weather-format";
 import type { UnitSystem, WeatherOverview, WeatherPeriod } from "@/lib/weather-types";
 
@@ -83,13 +83,13 @@ export function RecentPanel({
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                 <Metric
                   label="Warmest"
-                  icon="🔥"
+                  icon={<ThermometerHighIcon />}
                   value={stats.maxTemp === null ? dash : `${stats.maxTemp.toFixed(1)}°`}
                   hint={stats.maxTempAt ?? undefined}
                 />
                 <Metric
                   label="Coldest"
-                  icon="🧊"
+                  icon={<ThermometerLowIcon />}
                   value={stats.minTemp === null ? dash : `${stats.minTemp.toFixed(1)}°`}
                   hint={stats.minTempAt ?? undefined}
                 />
@@ -99,7 +99,7 @@ export function RecentPanel({
                 />
                 <Metric
                   label="Total precip"
-                  icon="🌧️"
+                  icon={<CloudRainIcon />}
                   value={
                     stats.precipTotal === null
                       ? dash
@@ -111,7 +111,7 @@ export function RecentPanel({
                 />
                 <Metric
                   label="Peak wind"
-                  icon="💨"
+                  icon={<WindIcon />}
                   value={
                     stats.maxWind === null
                       ? dash
@@ -178,7 +178,7 @@ export function RecentPanel({
                       </td>
                       <td className="wx-muted py-1.5 pr-3">
                         <span className="mr-1.5" aria-hidden>
-                          {weatherEmoji(period.icon, period.weatherPrimaryCoded)}
+                          <ConditionGlyph icon={period.icon} coded={period.weatherPrimaryCoded} />
                         </span>
                         {period.weather ?? period.weatherPrimary ?? dash}
                       </td>

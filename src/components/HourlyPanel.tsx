@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Card, Chip, Meter, SectionBody } from "./ui";
 import { SeriesChart } from "./Chart";
+import { ConditionGlyph } from "@/components/icons";
 import {
   dash,
   formatDistance,
@@ -16,7 +17,6 @@ import {
   formatTemp,
   formatWeekday,
   isNum,
-  weatherEmoji,
 } from "@/lib/weather-format";
 import type { UnitSystem, WeatherOverview, WeatherPeriod } from "@/lib/weather-types";
 import { ForecastComparison } from "./ForecastComparison";
@@ -109,7 +109,7 @@ export function HourlyPanel({
                       </div>
                       <div className="wx-dim text-[10px]">{formatWeekday(iso)}</div>
                       <div className="my-1 text-2xl" aria-hidden>
-                        {weatherEmoji(period.icon, period.weatherPrimaryCoded)}
+                        <ConditionGlyph icon={period.icon} coded={period.weatherPrimaryCoded} />
                       </div>
                       <div className="text-lg font-semibold">
                         {formatTemp(period.tempC, period.tempF, units)}
@@ -359,7 +359,7 @@ function HourDetail({
       <div className="mb-3 flex items-center justify-between">
         <h3 className="font-medium">
           <span className="mr-2" aria-hidden>
-            {weatherEmoji(period.icon, period.weatherPrimaryCoded)}
+            <ConditionGlyph icon={period.icon} coded={period.weatherPrimaryCoded} />
           </span>
           {formatWeekday(iso)} {formatHourLabel(iso, hour12)}
         </h3>

@@ -254,44 +254,6 @@ export function relativeFromNow(iso: string | null | undefined): string {
 
 /* ------------------------------ icons ----------------------------- */
 
-/**
- * Xweather returns icon file names like "pcloudyrn.png". Rather than ship an
- * icon set, map the meaningful substrings onto emoji — legible at every size
- * and identical in both themes.
- */
-export function weatherEmoji(
-  icon: string | null | undefined,
-  weatherPrimaryCoded?: string | null
-): string {
-  const name = (icon ?? "").replace(/\.(png|svg|gif)$/i, "").toLowerCase();
-  const night = name.endsWith("n") && !name.endsWith("rain") && !name.endsWith("in");
-
-  const coded = (weatherPrimaryCoded ?? "").toUpperCase();
-  if (coded.includes(":T")) return "⛈️";
-  if (coded.includes(":A")) return "🌨️"; // hail
-
-  if (!name || name === "na") return "🌡️";
-  if (name.includes("tstorm") || name.includes("thunder")) return "⛈️";
-  if (name.includes("blizzard")) return "🌨️";
-  if (name.includes("snowshowers") || name.includes("flurries")) return "🌨️";
-  if (name.includes("snowtorain") || name.includes("raintosnow") || name.includes("wintrymix") || name.includes("rainandsnow")) return "🌨️";
-  if (name.includes("sleet") || name.includes("freezingrain")) return "🧊";
-  if (name.includes("snow")) return "❄️";
-  if (name.includes("drizzle")) return "🌦️";
-  if (name.includes("showers")) return "🌦️";
-  if (name.includes("rain")) return "🌧️";
-  if (name.includes("fog") || name.includes("hazy") || name.includes("smoke") || name.includes("haze")) return "🌫️";
-  if (name.includes("dust") || name.includes("sand")) return "🌪️";
-  if (name.includes("wind")) return "💨";
-  if (name.includes("cold")) return "🥶";
-  if (name.includes("hot")) return "🥵";
-  if (name.includes("mcloudy")) return night ? "☁️" : "🌥️";
-  if (name.includes("pcloudy")) return night ? "☁️" : "⛅";
-  if (name.includes("cloudy")) return "☁️";
-  if (name.includes("fair")) return night ? "🌙" : "🌤️";
-  if (name.includes("clear") || name.includes("sunny")) return night ? "🌙" : "☀️";
-  return "🌡️";
-}
 
 /* --------------------------- descriptors -------------------------- */
 
@@ -383,18 +345,6 @@ export function pollutantLabel(type: string): string {
   return map[type.toLowerCase()] ?? type.toUpperCase();
 }
 
-export function moonPhaseEmoji(phase: number | null | undefined): string {
-  if (!isNum(phase)) return "🌙";
-  const p = ((phase % 1) + 1) % 1;
-  if (p < 0.0625 || p >= 0.9375) return "🌑";
-  if (p < 0.1875) return "🌒";
-  if (p < 0.3125) return "🌓";
-  if (p < 0.4375) return "🌔";
-  if (p < 0.5625) return "🌕";
-  if (p < 0.6875) return "🌖";
-  if (p < 0.8125) return "🌗";
-  return "🌘";
-}
 
 /** Alert severity colours, keyed off the Xweather alert colour or category. */
 export function alertTone(color: string | null | undefined): string {
@@ -652,7 +602,14 @@ export function classifyCondition(
     switch (code) {
       case "T": return "tstorm";
       case "A": case "IP": return "hail";
-      case "RW": case "L": return "showers";
+      case "RW": return "showers";
+      /*
+       * L is drizzle and ZL freezing drizzle. They were folded in with RW, so
+       * every drizzle drew the heavier showers glyph — and the icon-name
+       * fallback below has always had a separate "drizzle" branch, so the two
+       * paths disagreed on the same weather.
+       */
+      case "L": case "ZL": return "drizzle";
       case "R": case "ZR": return "rain";
       case "S": case "SW": case "BS": return "snow";
       case "RS": case "WM": return "sleet";

@@ -14,6 +14,8 @@ import type { ConditionKind } from "@/lib/weather-format";
  * chip without variants.
  */
 
+import { classifyCondition } from "@/lib/weather-format";
+
 type IconProps = SVGProps<SVGSVGElement> & { size?: number | string };
 
 function Svg({ size = 24, children, ...rest }: IconProps) {
@@ -213,6 +215,49 @@ export const DropletIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** Stacked swells — sea level and wave height, where an emoji used to be. */
+export const WaveIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M2.5 10.6c1.6 0 1.6-1.8 3.2-1.8s1.6 1.8 3.2 1.8 1.6-1.8 3.2-1.8 1.6 1.8 3.2 1.8 1.6-1.8 3.2-1.8 1.6 1.8 3 1.8" />
+    <path d="M2.5 15c1.6 0 1.6-1.8 3.2-1.8S7.3 15 8.9 15s1.6-1.8 3.2-1.8S13.7 15 15.3 15s1.6-1.8 3.2-1.8S20.1 15 21.5 15" />
+    <path d="M2.5 19.4c1.6 0 1.6-1.8 3.2-1.8s1.6 1.8 3.2 1.8 1.6-1.8 3.2-1.8 1.6 1.8 3.2 1.8 1.6-1.8 3.2-1.8 1.6 1.8 3 1.8" />
+  </Svg>
+);
+
+/** Thermometer reading high — "warmest", where a flame emoji used to be. */
+export const ThermometerHighIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M10 13.6V5.4a2 2 0 1 1 4 0v8.2a4 4 0 1 1-4 0Z" />
+    <path d="M12 8.6v5.6" strokeWidth="2.4" />
+  </Svg>
+);
+
+/** Thermometer reading low — "coldest". */
+export const ThermometerLowIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M10 13.6V5.4a2 2 0 1 1 4 0v8.2a4 4 0 1 1-4 0Z" />
+    <path d="M12 12.4v1.8" strokeWidth="2.4" />
+  </Svg>
+);
+
+/** A list of records — replaces the clipboard emoji on crime reports. */
+export const ListIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8.5 6.5h11M8.5 12h11M8.5 17.5h11" />
+    <circle cx="4.6" cy="6.5" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="4.6" cy="12" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="4.6" cy="17.5" r="1.1" fill="currentColor" stroke="none" />
+  </Svg>
+);
+
+/** A duration rather than a clock time. */
+export const ClockIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="8.6" />
+    <path d="M12 7.2V12l3.2 2" />
+  </Svg>
+);
+
 export const EyeIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z" />
@@ -300,5 +345,76 @@ export function ConditionIcon({
     >
       <Component size={size} {...rest} />
     </span>
+  );
+}
+
+/**
+ * The condition glyph for a forecast row, from the same two fields the hero
+ * uses. It exists because the hero moved to the icon set and the list rows did
+ * not — `weatherEmoji` was still rendering 🌧️ in four panels long after the
+ * brief said no emoji. One wrapper means the next surface cannot drift either.
+ */
+export function ConditionGlyph({
+  icon,
+  coded,
+  size = 20,
+  className,
+  title,
+}: {
+  icon?: string | null;
+  coded?: string | null;
+  size?: number;
+  className?: string;
+  title?: string;
+}) {
+  const condition = classifyCondition(icon, coded);
+  return (
+    <ConditionIcon
+      kind={condition.kind}
+      night={condition.night}
+      size={size}
+      className={className}
+      title={title}
+    />
+  );
+}
+
+/**
+ * The moon drawn at its actual phase, rather than one of eight emoji.
+ * `phase` is the Xweather 0-1 fraction: 0 new, 0.5 full. The lit part is a
+ * disc masked by an ellipse whose width tracks the terminator, so it sweeps
+ * continuously instead of snapping between glyphs.
+ */
+export function MoonPhaseIcon({
+  phase,
+  size = 24,
+  ...rest
+}: IconProps & { phase: number | null | undefined }) {
+  const p = typeof phase === "number" && Number.isFinite(phase) ? phase - Math.floor(phase) : 0.5;
+  // Illuminated fraction, and which limb it sits on.
+  const lit = (1 - Math.cos(2 * Math.PI * p)) / 2;
+  const waxing = p < 0.5;
+  const r = 8.4;
+  // Terminator half-width: 0 at quarter (straight edge), r at new/full.
+  const k = Math.abs(1 - 2 * lit) * r;
+  const id = `moon-${Math.round(p * 1000)}`;
+
+  return (
+    <Svg size={size} {...rest}>
+      <defs>
+        <clipPath id={id}>
+          {/* The lit half, plus or minus the terminator ellipse. */}
+          <path
+            d={
+              waxing
+                ? `M12 ${12 - r} A ${r} ${r} 0 0 1 12 ${12 + r} A ${k} ${r} 0 0 ${lit > 0.5 ? 0 : 1} 12 ${12 - r} Z`
+                : `M12 ${12 - r} A ${r} ${r} 0 0 0 12 ${12 + r} A ${k} ${r} 0 0 ${lit > 0.5 ? 1 : 0} 12 ${12 - r} Z`
+            }
+          />
+        </clipPath>
+      </defs>
+      <circle cx="12" cy="12" r={r} />
+      <circle cx="12" cy="12" r={r} fill="currentColor" stroke="none" clipPath={`url(#${id})`} />
+    </Svg>
   );
 }
