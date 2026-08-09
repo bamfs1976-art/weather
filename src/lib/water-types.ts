@@ -83,6 +83,8 @@ export interface TideGauge {
   rangeM: number | null;
   /** Null when the last two readings are identical, i.e. at the turn. */
   rising: boolean | null;
+  /** Which query form produced the series — reported by diagnostics. */
+  via?: string | null;
 }
 
 export interface BathingWater {
@@ -99,6 +101,8 @@ export interface BathingWater {
   /** The published annual classification, from four years of samples. */
   annualClass: string | null;
   profileUrl: string | null;
+  /** Which query form produced this — reported by diagnostics. */
+  via?: string | null;
 }
 
 export interface WaterPayload {

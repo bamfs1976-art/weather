@@ -466,31 +466,53 @@ export async function getTideGauge(
 
   // 48 hours at four readings an hour, oldest first, so the series can be
   // charted directly and the turning points found by walking it.
+  /*
+   * Try more than one documented form and keep the first that yields a usable
+   * series. The station lookup succeeds and the readings come back empty often
+   * enough — reported live as "not currently reporting" while the gauge was
+   * plainly fine — that pinning this on one URL shape is a guess, and guessing
+   * URL shapes has cost this project a lot of rounds. `via` records which form
+   * worked so diagnostics can report it rather than leaving it a mystery.
+   */
   const since = new Date(Date.now() - 48 * 3600_000).toISOString().slice(0, 19) + "Z";
-  const readingSection = await getJSON<{ items?: RawReading | RawReading[] }>(
-    `${EA_BASE}/id/stations/${encodeURIComponent(notation)}/readings` +
-      `?since=${encodeURIComponent(since)}&_sorted&_limit=250`,
-    TTL.readings
-  );
-  if (!readingSection.ok || !readingSection.data) {
-    return { ok: false, data: null, error: readingSection.error, code: readingSection.code };
+  const station = `${EA_BASE}/id/stations/${encodeURIComponent(notation)}`;
+  const attempts: { via: string; url: string }[] = [
+    { via: "since+sorted", url: `${station}/readings?since=${encodeURIComponent(since)}&_sorted&_limit=250` },
+    { via: "sorted", url: `${station}/readings?_sorted&_limit=250` },
+    { via: "measures", url: `${EA_BASE}/data/readings?since=${encodeURIComponent(since)}&stationReference=${encodeURIComponent(notation)}&_sorted&_limit=250` },
+    { via: "latest", url: `${station}/readings?latest` },
+  ];
+
+  let readings: TideReading[] = [];
+  let via: string | null = null;
+  let lastError: Section<TideGauge> | null = null;
+
+  for (const attempt of attempts) {
+    const section = await getJSON<{ items?: RawReading | RawReading[] }>(
+      attempt.url,
+      TTL.readings
+    );
+    if (!section.ok || !section.data) {
+      lastError = { ok: false, data: null, error: section.error, code: section.code };
+      continue;
+    }
+    const parsed = parseReadings(section.data.items, offsetMinutes);
+    if (parsed.length > readings.length) {
+      readings = parsed;
+      via = attempt.via;
+    }
+    // Four points is the minimum the turning-point finder can work with; once
+    // a form gives a real series there is nothing to gain from the rest.
+    if (readings.length >= 4) break;
   }
 
-  const readings: TideReading[] = toArray(readingSection.data.items)
-    .map((reading) => {
-      const when = str(reading.dateTime);
-      const level = num(reading.value);
-      return when !== null && level !== null
-        ? { timeISO: withOffset(when, offsetMinutes), levelM: level, at: Date.parse(when) }
-        : null;
-    })
-    .filter((r): r is TideReading & { at: number } => r !== null)
-    .sort((a, b) => a.at - b.at)
-    .map(({ timeISO, levelM }) => ({ timeISO, levelM }));
+  if (readings.length === 0 && lastError) return lastError;
 
   if (readings.length < 4) {
     return fail<TideGauge>(
-      "The nearest tide gauge is not currently reporting.",
+      readings.length === 0
+        ? "The nearest tide gauge returned no readings."
+        : `The nearest tide gauge returned only ${readings.length} readings — too few to find high and low water.`,
       "warn_no_data"
     );
   }
@@ -506,10 +528,29 @@ export async function getTideGauge(
     unit: "m",
     latest,
     readings,
+    via,
     extremes: findTurningPoints(readings),
     rangeM: Math.max(...levels) - Math.min(...levels),
     rising: latest.levelM === previous.levelM ? null : latest.levelM > previous.levelM,
   });
+}
+
+/** Rows to a sorted level series, dropping anything without a time and value. */
+function parseReadings(
+  items: RawReading | RawReading[] | undefined,
+  offsetMinutes: number | null
+): TideReading[] {
+  return toArray(items)
+    .map((reading) => {
+      const when = str(reading.dateTime);
+      const level = num(reading.value);
+      return when !== null && level !== null
+        ? { timeISO: withOffset(when, offsetMinutes), levelM: level, at: Date.parse(when) }
+        : null;
+    })
+    .filter((r): r is TideReading & { at: number } => r !== null)
+    .sort((a, b) => a.at - b.at)
+    .map(({ timeISO, levelM }) => ({ timeISO, levelM }));
 }
 
 /**
@@ -693,14 +734,60 @@ export async function getBathingWaters(
     );
   }
 
-  const url =
-    `${BWQ_BASE}/doc/bathing-water-quality/in-season/latest-nearest` +
-    `/easting/${Math.round(grid.easting)}/northing/${Math.round(grid.northing)}.json` +
-    `?_pageSize=${limit}`;
+  /*
+   * Several documented shapes, tried in order. The England path returned HTTP
+   * 403 in production while every other feed on the same host worked, so
+   * something about that exact URL is wrong rather than the service being
+   * down — and Welsh bathing waters are published under their own dataset
+   * path, which is where Gower beaches would actually live. Rather than pick
+   * one and hope, try each and report which answered.
+   */
+  const e = Math.round(grid.easting);
+  const n = Math.round(grid.northing);
+  const attempts: { via: string; url: string }[] = [
+    {
+      via: "wales/latest-nearest",
+      url: `${BWQ_BASE}/wales/bathing-waters/data/bathing-water-quality/in-season/latest-nearest/easting/${e}/northing/${n}.json?_pageSize=${limit}`,
+    },
+    {
+      via: "england/latest-nearest",
+      url: `${BWQ_BASE}/doc/bathing-water-quality/in-season/latest-nearest/easting/${e}/northing/${n}.json?_pageSize=${limit}`,
+    },
+    {
+      via: "england/latest-nearest (no suffix)",
+      url: `${BWQ_BASE}/doc/bathing-water-quality/in-season/latest-nearest/easting/${e}/northing/${n}?_format=json&_pageSize=${limit}`,
+    },
+    {
+      // Last resort: a bounding box around the point, ~25 km each way.
+      via: "bounding box",
+      url:
+        `${BWQ_BASE}/doc/bathing-water.json?_pageSize=${limit * 4}` +
+        `&min-samplingPoint.easting=${e - 25000}&max-samplingPoint.easting=${e + 25000}` +
+        `&min-samplingPoint.northing=${n - 25000}&max-samplingPoint.northing=${n + 25000}`,
+    },
+  ];
 
-  const section = await getJSON<{ result?: RawBathingWater }>(url, TTL.bathing);
-  if (!section.ok || !section.data) {
-    return { ok: false, data: null, error: section.error, code: section.code };
+  let section: Section<{ result?: RawBathingWater }> | null = null;
+  let via: string | null = null;
+  for (const attempt of attempts) {
+    const tried = await getJSON<{ result?: RawBathingWater }>(attempt.url, TTL.bathing);
+    if (tried.ok && tried.data && toArray(tried.data.result?.item).length > 0) {
+      section = tried;
+      via = attempt.via;
+      break;
+    }
+    // Keep the first real failure so the message is about a genuine problem
+    // rather than about the last shape happening to return an empty list.
+    if (!section) section = tried;
+  }
+
+  if (!section || !section.ok || !section.data) {
+    return {
+      ok: false,
+      data: null,
+      error: section?.error ?? "Bathing water quality unavailable.",
+      code: section?.code ?? "network",
+    };
   }
 
   const items = toArray(section.data.result?.item);
@@ -711,7 +798,7 @@ export async function getBathingWaters(
     );
   }
 
-  const waters = items.slice(0, limit).map((item) => {
+  const waters: BathingWater[] = items.slice(0, limit).map((item): BathingWater => {
     const water = item.bathingWater ?? {};
     const point = water.samplingPoint ?? {};
     const pLat = num(point.lat);
@@ -735,7 +822,8 @@ export async function getBathingWaters(
         linked(item.complianceClassification) ??
         linked(item.latestComplianceAssessment?.complianceClassification),
       profileUrl: str(water._about),
-    } satisfies BathingWater;
+      via,
+    };
   });
 
   return succeed(

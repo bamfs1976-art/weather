@@ -105,8 +105,8 @@ export async function GET(request: NextRequest) {
         return [
           { endpoint: "EA flood-monitoring: floods", ok: floods.ok, code: floods.code, message: floods.error },
           { endpoint: "EA flood-monitoring: stations + measures", ok: rivers.ok, code: rivers.code, message: rivers.error },
-          { endpoint: "EA flood-monitoring: tide gauge", ok: tides.ok, code: tides.code, message: tides.error },
-          { endpoint: "Defra/NRW bathing water quality", ok: bathing.ok, code: bathing.code, message: bathing.error },
+          { endpoint: "EA flood-monitoring: tide gauge", ok: tides.ok, code: tides.code, message: tides.error, via: tides.data?.via ?? null, readings: tides.data?.readings.length ?? 0 },
+          { endpoint: "Defra/NRW bathing water quality", ok: bathing.ok, code: bathing.code, message: bathing.error, via: bathing.data?.[0]?.via ?? null, found: bathing.data?.length ?? 0 },
           { endpoint: "Open-Meteo Marine", ok: marine.ok, code: marine.code, message: marine.error },
           { endpoint: "Open-Meteo air quality (pollen)", ok: pollen.ok, code: pollen.code, message: pollen.error },
           { endpoint: "Met Office DataHub (site specific)", ok: metoffice.ok, code: metoffice.code, message: metoffice.error },
