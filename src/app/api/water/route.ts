@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
 
   const [floods, rivers, marine, tides, bathing] = await Promise.all([
     getFloodWarnings(lat, lon, 30, offsetMinutes),
-    getRiverStations(lat, lon, 20, 3, offsetMinutes),
+    getRiverStations(lat, lon, 20, 2, offsetMinutes),
     getMarineConditions(lat, lon, offsetMinutes),
     getTideGauge(lat, lon, offsetMinutes),
     getBathingWaters(lat, lon),

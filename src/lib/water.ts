@@ -326,6 +326,7 @@ export async function getRiverStations(
       const record = num(item.stageScale?.maxOnRecord?.value);
 
       let measures: RiverMeasure[] = [];
+      let lookupFailed = false;
       if (notation) {
         /*
          * Two calls, because the Environment Agency returns `latestReading` as
@@ -360,6 +361,7 @@ export async function getRiverStations(
           }
         }
 
+        if (!measureSection.ok) lookupFailed = true;
         if (measureSection.ok && measureSection.data) {
           measures = toArray(measureSection.data.items).map((measure) => {
             const measureId = str(measure["@id"]) ?? "";
@@ -400,15 +402,25 @@ export async function getRiverStations(
         lon: sLon,
         distanceKM: distance,
         measures,
+        lookupFailed,
       } satisfies RiverStation;
     })
   );
 
   const withMeasures = stations.filter((station) => station.measures.length > 0);
   if (withMeasures.length === 0) {
+    /*
+     * Distinguish "this gauge publishes nothing" from "the request for its
+     * measures did not come back". Both used to say the former, which sent me
+     * looking at the wrong thing when a burst of requests was being throttled
+     * and the gauges were fine.
+     */
+    const failed = stations.some((station) => station.lookupFailed);
     return fail<RiverStation[]>(
-      "Gauges were found nearby but none publishes a measurement series.",
-      "warn_no_data"
+      failed
+        ? "Gauges were found nearby, but the Environment Agency did not return their measurements in time."
+        : "Gauges were found nearby but none publishes a measurement series.",
+      failed ? "timeout" : "warn_no_data"
     );
   }
 
@@ -491,46 +503,34 @@ export async function getTideGauge(
    * needs, and asking the Environment Agency for a quarter of the rows is the
    * difference between answering and not.
    */
-  const since = new Date(Date.now() - 26 * 3600_000).toISOString().slice(0, 19) + "Z";
-  const station = `${EA_BASE}/id/stations/${encodeURIComponent(notation)}`;
-  const attempts: { via: string; url: string }[] = [
-    { via: "since+sorted", url: `${station}/readings?since=${encodeURIComponent(since)}&_sorted&_limit=120` },
-    { via: "sorted", url: `${station}/readings?_sorted&_limit=120` },
-    { via: "latest", url: `${station}/readings?latest` },
-  ];
-
-  let readings: TideReading[] = [];
-  let via: string | null = null;
-  let lastError: Section<TideGauge> | null = null;
   /*
-   * One deadline across every attempt. Netlify gives a synchronous function ten
-   * seconds total, so three tries at eight seconds each would take the whole
-   * payload down rather than degrading this one card.
+   * One request, twelve hours, sixty rows.
+   *
+   * This started as 48 hours at 250 rows, which timed out; then as a chain of
+   * three fallbacks, which timed out *and* pushed the whole burst of
+   * Environment Agency calls over what the service will absorb — river levels,
+   * which had been working for weeks, started reporting no gauges at all. The
+   * fallbacks were treating a throughput problem as a URL problem and making it
+   * worse. Twelve hours still spans a full tidal cycle, which is all the
+   * turning-point finder needs to place a high and a low.
    */
-  const deadline = Date.now() + 6_500;
+  const since = new Date(Date.now() - 13 * 3600_000).toISOString().slice(0, 19) + "Z";
+  const station = `${EA_BASE}/id/stations/${encodeURIComponent(notation)}`;
+  const via = "since+sorted";
 
-  for (const attempt of attempts) {
-    const remaining = deadline - Date.now();
-    if (remaining < 1_200) break;
-    const section = await getJSON<{ items?: RawReading | RawReading[] }>(
-      attempt.url,
-      TTL.readings,
-      {},
-      remaining
-    );
-    if (!section.ok || !section.data) {
-      lastError = { ok: false, data: null, error: section.error, code: section.code };
-      continue;
-    }
-    const parsed = parseReadings(section.data.items, offsetMinutes);
-    if (parsed.length > readings.length) {
-      readings = parsed;
-      via = attempt.via;
-    }
-    // Four points is the minimum the turning-point finder can work with; once
-    // a form gives a real series there is nothing to gain from the rest.
-    if (readings.length >= 4) break;
-  }
+  const readingSection = await getJSON<{ items?: RawReading | RawReading[] }>(
+    `${station}/readings?since=${encodeURIComponent(since)}&_sorted&_limit=60`,
+    TTL.readings,
+    {},
+    6_000
+  );
+
+  const readings = readingSection.ok && readingSection.data
+    ? parseReadings(readingSection.data.items, offsetMinutes)
+    : [];
+  const lastError: Section<TideGauge> | null = readingSection.ok
+    ? null
+    : { ok: false, data: null, error: readingSection.error, code: readingSection.code };
 
   if (readings.length === 0 && lastError) return lastError;
 
@@ -770,42 +770,20 @@ export async function getBathingWaters(
    */
   const e = Math.round(grid.easting);
   const n = Math.round(grid.northing);
-  const attempts: { via: string; url: string }[] = [
-    {
-      via: "wales/latest-nearest",
-      url: `${BWQ_BASE}/wales/bathing-waters/data/bathing-water-quality/in-season/latest-nearest/easting/${e}/northing/${n}.json?_pageSize=${limit}`,
-    },
-    {
-      via: "england/latest-nearest",
-      url: `${BWQ_BASE}/doc/bathing-water-quality/in-season/latest-nearest/easting/${e}/northing/${n}.json?_pageSize=${limit}`,
-    },
-    {
-      via: "england/latest-nearest (no suffix)",
-      url: `${BWQ_BASE}/doc/bathing-water-quality/in-season/latest-nearest/easting/${e}/northing/${n}?_format=json&_pageSize=${limit}`,
-    },
-    {
-      // Last resort: a bounding box around the point, ~25 km each way.
-      via: "bounding box",
-      url:
-        `${BWQ_BASE}/doc/bathing-water.json?_pageSize=${limit * 4}` +
-        `&min-samplingPoint.easting=${e - 25000}&max-samplingPoint.easting=${e + 25000}` +
-        `&min-samplingPoint.northing=${n - 25000}&max-samplingPoint.northing=${n + 25000}`,
-    },
-  ];
-
-  let section: Section<{ result?: RawBathingWater }> | null = null;
-  let via: string | null = null;
-  for (const attempt of attempts) {
-    const tried = await getJSON<{ result?: RawBathingWater }>(attempt.url, TTL.bathing);
-    if (tried.ok && tried.data && toArray(tried.data.result?.item).length > 0) {
-      section = tried;
-      via = attempt.via;
-      break;
-    }
-    // Keep the first real failure so the message is about a genuine problem
-    // rather than about the last shape happening to return an empty list.
-    if (!section) section = tried;
-  }
+  /*
+   * One request. Four different URL shapes were tried in production and every
+   * one returned 403, including with a User-Agent — so the path was never the
+   * problem and the extra three only added load to a host that was already
+   * struggling. Welsh bathing waters live under the Wales dataset, so that is
+   * the one worth keeping.
+   */
+  const via = "wales/latest-nearest";
+  const section = await getJSON<{ result?: RawBathingWater }>(
+    `${BWQ_BASE}/wales/bathing-waters/data/bathing-water-quality/in-season/latest-nearest/easting/${e}/northing/${n}.json?_pageSize=${limit}`,
+    TTL.bathing,
+    {},
+    6_000
+  );
 
   if (!section || !section.ok || !section.data) {
     return {

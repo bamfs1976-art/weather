@@ -29,6 +29,8 @@ export interface RiverStation {
   lon: number | null;
   distanceKM: number | null;
   measures: RiverMeasure[];
+  /** True when the measures lookup errored rather than returning nothing. */
+  lookupFailed?: boolean;
 }
 
 export interface FloodWarning {
