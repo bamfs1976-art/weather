@@ -19,6 +19,7 @@ import {
   weatherEmoji,
 } from "@/lib/weather-format";
 import type { UnitSystem, WeatherOverview, WeatherPeriod } from "@/lib/weather-types";
+import { ForecastComparison } from "./ForecastComparison";
 
 type Metric = "temp" | "wind" | "precip" | "humidity" | "pressure" | "solar";
 
@@ -45,6 +46,8 @@ export function HourlyPanel({
 
   return (
     <div className="space-y-4">
+      <ForecastComparison overview={overview} units={units} hour12={hour12} />
+
       <Card
         title="Next 48 hours"
         subtitle="Hourly forecast — tap a chart column for exact values"

@@ -14,6 +14,7 @@ import {
   getTideGauge,
 } from "@/lib/water";
 import { getPollen } from "@/lib/pollen";
+import { getMetOfficeHourly } from "@/lib/metoffice";
 import {
   BASE_LAYERS,
   DECORATION_LAYERS,
@@ -92,13 +93,14 @@ export async function GET(request: NextRequest) {
 
   const water = point
     ? await (async () => {
-        const [floods, rivers, marine, tides, bathing, pollen] = await Promise.all([
+        const [floods, rivers, marine, tides, bathing, pollen, metoffice] = await Promise.all([
           getFloodWarnings(point.lat, point.lon, 30),
           getRiverStations(point.lat, point.lon, 20, 2),
           getMarineConditions(point.lat, point.lon),
           getTideGauge(point.lat, point.lon),
           getBathingWaters(point.lat, point.lon),
           getPollen(point.lat, point.lon),
+          getMetOfficeHourly(point.lat, point.lon),
         ]);
         return [
           { endpoint: "EA flood-monitoring: floods", ok: floods.ok, code: floods.code, message: floods.error },
@@ -107,6 +109,7 @@ export async function GET(request: NextRequest) {
           { endpoint: "Defra/NRW bathing water quality", ok: bathing.ok, code: bathing.code, message: bathing.error },
           { endpoint: "Open-Meteo Marine", ok: marine.ok, code: marine.code, message: marine.error },
           { endpoint: "Open-Meteo air quality (pollen)", ok: pollen.ok, code: pollen.code, message: pollen.error },
+          { endpoint: "Met Office DataHub (site specific)", ok: metoffice.ok, code: metoffice.code, message: metoffice.error },
         ];
       })()
     : [];

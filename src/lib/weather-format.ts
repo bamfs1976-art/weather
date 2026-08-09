@@ -771,3 +771,110 @@ export function skyMotion({ kind, night }: Condition): "cloud" | "rain" | "glow"
       return "none";
   }
 }
+
+/* --------------------------- comparison --------------------------- */
+
+/**
+ * Line two forecasts up hour by hour and describe where they disagree.
+ *
+ * Matching is by absolute instant, not by array position: the two providers
+ * start at different points in the hour and Xweather timestamps carry the
+ * location's offset while the Met Office publishes UTC, so comparing index 3
+ * with index 3 would silently compare different times. Each Xweather hour is
+ * paired with the Met Office hour nearest to it, and anything more than half an
+ * hour apart is dropped rather than fudged.
+ */
+export function compareForecasts(
+  xweather: { dateTimeISO?: string | null; tempC?: number | null; pop?: number | null }[],
+  metoffice: { timeISO: string; tempC: number | null; pop: number | null }[]
+): import("./metoffice-types").ForecastComparison {
+  const TOLERANCE_MS = 30 * 60_000;
+
+  const mo = metoffice
+    .map((hour) => ({ at: Date.parse(hour.timeISO), hour }))
+    .filter((entry) => !Number.isNaN(entry.at))
+    .sort((a, b) => a.at - b.at);
+
+  const hours: import("./metoffice-types").ComparisonHour[] = [];
+
+  for (const period of xweather) {
+    const at = period.dateTimeISO ? Date.parse(period.dateTimeISO) : NaN;
+    if (Number.isNaN(at)) continue;
+
+    let best: (typeof mo)[number] | null = null;
+    let bestGap = Infinity;
+    for (const entry of mo) {
+      const gap = Math.abs(entry.at - at);
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = entry;
+      }
+      // The list is sorted, so once the gap starts growing the nearest is behind us.
+      if (entry.at > at && gap > bestGap) break;
+    }
+    if (!best || bestGap > TOLERANCE_MS) continue;
+
+    const xTemp = isNum(period.tempC) ? period.tempC : null;
+    const mTemp = best.hour.tempC;
+    const xPop = isNum(period.pop) ? period.pop : null;
+    const mPop = best.hour.pop;
+
+    hours.push({
+      timeISO: period.dateTimeISO as string,
+      xweatherTempC: xTemp,
+      metofficeTempC: mTemp,
+      tempDeltaC: xTemp !== null && mTemp !== null ? mTemp - xTemp : null,
+      xweatherPop: xPop,
+      metofficePop: mPop,
+      popDelta: xPop !== null && mPop !== null ? mPop - xPop : null,
+    });
+  }
+
+  const tempDeltas = hours
+    .map((hour) => hour.tempDeltaC)
+    .filter((delta): delta is number => delta !== null);
+
+  const widestTemp =
+    hours
+      .filter((hour) => hour.tempDeltaC !== null)
+      .sort(
+        (a, b) => Math.abs(b.tempDeltaC as number) - Math.abs(a.tempDeltaC as number)
+      )[0] ?? null;
+
+  const widestPop =
+    hours
+      .filter((hour) => hour.popDelta !== null)
+      .sort((a, b) => Math.abs(b.popDelta as number) - Math.abs(a.popDelta as number))[0] ??
+    null;
+
+  return {
+    hours,
+    overlap: hours.length,
+    meanAbsTempDeltaC: tempDeltas.length
+      ? tempDeltas.reduce((sum, d) => sum + Math.abs(d), 0) / tempDeltas.length
+      : null,
+    biasC: tempDeltas.length
+      ? tempDeltas.reduce((sum, d) => sum + d, 0) / tempDeltas.length
+      : null,
+    widestTemp,
+    widestPop,
+  };
+}
+
+/**
+ * Plain-English summary of how closely two forecasts agree.
+ *
+ * The thresholds are deliberately generous: a degree between two models is
+ * normal and should not be dressed up as a disagreement, and treating it as one
+ * would make the card cry wolf every day.
+ */
+export function agreementLabel(meanAbsTempDeltaC: number | null): {
+  label: string;
+  tone: "good" | "accent" | "warn";
+} {
+  if (meanAbsTempDeltaC === null) return { label: "Not comparable", tone: "accent" };
+  if (meanAbsTempDeltaC < 0.75) return { label: "Close agreement", tone: "good" };
+  if (meanAbsTempDeltaC < 1.5) return { label: "Broad agreement", tone: "good" };
+  if (meanAbsTempDeltaC < 2.5) return { label: "Some disagreement", tone: "accent" };
+  return { label: "Notable disagreement", tone: "warn" };
+}

@@ -1,3 +1,4 @@
+import type { MetOfficeForecast } from "./metoffice-types";
 import type { PollenForecast } from "./pollen-types";
 /**
  * Types for the Xweather (Vaisala) Weather API responses used by the app.
@@ -380,6 +381,8 @@ export interface WeatherOverview {
     /** Not Xweather — CAMS pollen via Open-Meteo, folded in here so the
      *  dashboard still loads everything in one request. */
     pollen: Section<PollenForecast>;
+    /** Met Office site-specific forecast, carried for comparison. */
+    metoffice: Section<MetOfficeForecast>;
   };
 }
 

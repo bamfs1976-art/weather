@@ -19,6 +19,7 @@ import {
   resolvePlace,
 } from "@/lib/xweather";
 import { getPollen } from "@/lib/pollen";
+import { getMetOfficeHourly } from "@/lib/metoffice";
 import type { WeatherOverview } from "@/lib/weather-types";
 
 export const dynamic = "force-dynamic";
@@ -79,6 +80,7 @@ export async function GET(request: NextRequest) {
     phrase,
     recent,
     pollen,
+    metoffice,
   ] = await Promise.all([
     getCurrentConditions(point),
     getObservation(point),
@@ -101,6 +103,7 @@ export async function GET(request: NextRequest) {
         ? Math.round(resolved.data.tzoffset / 60)
         : null
     ),
+    getMetOfficeHourly(resolved.data.lat, resolved.data.lon),
   ]);
 
   const payload: WeatherOverview = {
@@ -122,6 +125,7 @@ export async function GET(request: NextRequest) {
       phrase,
       recent,
       pollen,
+      metoffice,
     },
   };
 

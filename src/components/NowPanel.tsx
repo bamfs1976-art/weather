@@ -5,6 +5,7 @@ import { Card, Chip, EmptyState, Meter, Metric, SectionBody, WindArrow } from ".
 import { WeatherHero } from "./WeatherHero";
 import { MetricTile, RadialRing, Sparkline, UVScale, WindCompass } from "./MetricTile";
 import { SunArc } from "./SunArc";
+import { ForecastComparison } from "./ForecastComparison";
 import { CloudLightningIcon, ConditionIcon, SunIcon } from "./icons";
 import { SeriesChart } from "./Chart";
 import { MapPanel } from "./MapPanel";
@@ -56,6 +57,10 @@ export function NowPanel({
       <AlertsBlock overview={overview} hour12={hour12} />
 
       <WeatherHero overview={overview} units={units} hour12={hour12} />
+
+      {/* One line saying whether the two providers agree; the full comparison
+          lives on the Hourly tab. */}
+      <ForecastComparison overview={overview} units={units} hour12={hour12} compact />
 
       {/*
         Four primary tiles. These are the readings people look for by name;

@@ -60,6 +60,7 @@ src/
 |----------|-------------|
 | `XWEATHER_CLIENT_ID` | Xweather application ID from https://account.xweather.com/ |
 | `XWEATHER_CLIENT_SECRET` | Xweather application secret |
+| `METOFFICE_API_KEY` | Optional. Met Office DataHub, for the Second opinion card only |
 
 Copy `.env.example` to `.env`. Without them the app still renders — every route
 returns a clear "credentials are not configured" notice instead of crashing.
@@ -107,6 +108,24 @@ User picks a place (search / geolocation / saved chip)
   extra requests.
 - Timestamps carry the location's UTC offset; `weather-format.ts` formats in that
   offset so times read as local-for-the-place.
+
+## Met Office comparison
+
+A second forecast beside Xweather rather than instead of it — the DataHub has no
+nowcast, no radar rasters and no archive, which is most of what this app does.
+
+- **The free plan is 360 calls a day**, reset at 00:00 UTC. `getMetOfficeHourly`
+  caches for 30 minutes, so one location costs about 48. Raising that cache is
+  the first thing to check if a `rate_limited` section appears.
+- Values arrive in SI and are converted in `lib/metoffice.ts`: m/s to km/h,
+  pascals to millibars, metres to kilometres. Do not pass raw Met Office numbers
+  to the formatters.
+- `compareForecasts` in `weather-format.ts` matches the two by **absolute
+  instant, not array index** — Xweather stamps carry the location's offset and
+  the Met Office publishes UTC, so index-to-index would compare different times.
+  Anything more than 30 minutes apart is dropped rather than fudged.
+- Without a key the section returns `no_credentials` and the card explains how
+  to switch it on, which is a setup step rather than an error.
 
 ## Other open data (no keys)
 
