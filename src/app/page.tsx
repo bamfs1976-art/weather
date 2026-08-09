@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LocationBar, type SavedPlace } from "@/components/LocationBar";
+import { TabBar } from "@/components/TabBar";
 import { NowPanel } from "@/components/NowPanel";
 import { HourlyPanel } from "@/components/HourlyPanel";
 import { ForecastPanel } from "@/components/ForecastPanel";
@@ -12,7 +13,7 @@ import { WaterPanel } from "@/components/WaterPanel";
 import { LocalPanel } from "@/components/LocalPanel";
 import { Logo } from "@/components/Logo";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { Notice, Skeleton } from "@/components/ui";
+import { CardSkeleton, Notice } from "@/components/ui";
 import { relativeFromNow } from "@/lib/weather-format";
 import type { ThemeName, UnitSystem, WeatherOverview } from "@/lib/weather-types";
 
@@ -212,9 +213,9 @@ export default function WeatherPage() {
       <header className="mb-4 flex items-center gap-3">
         <Logo size={44} className="shrink-0" />
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          <p className="wx-display text-2xl font-semibold tracking-tight sm:text-3xl">
             Weather
-          </h1>
+          </p>
           <p className="wx-muted text-xs">
             Live data from the Vaisala Xweather API
           </p>
@@ -237,19 +238,14 @@ export default function WeatherPage() {
         lastUpdated={lastUpdated}
       />
 
-      <nav className="wx-scroll mt-4 flex gap-1 pb-1" aria-label="Weather views">
-        {TABS.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            onClick={() => setTab(option.id)}
-            aria-current={tab === option.id ? "page" : undefined}
-            className={`wx-btn shrink-0 text-sm ${tab === option.id ? "wx-btn-active" : ""}`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </nav>
+      <div className="mt-4">
+        <TabBar
+          tabs={TABS as unknown as { id: string; label: string }[]}
+          value={tab}
+          onChange={(id) => setTab(id as TabId)}
+          ariaLabel="Weather views"
+        />
+      </div>
 
       <div className="mt-4">
         {error && (
@@ -265,7 +261,13 @@ export default function WeatherPage() {
             key={`${tab}-${overview.place.id}`}
             label={TABS.find((option) => option.id === tab)?.label ?? tab}
           >
-            <div className="wx-fade">
+            <div
+              className="wx-fade wx-stagger"
+              role="tabpanel"
+              id={`wx-panel-${tab}`}
+              aria-labelledby={`wx-tab-${tab}`}
+              tabIndex={0}
+            >
             {tab === "now" && (
               <NowPanel
                 overview={overview}
@@ -326,21 +328,21 @@ export default function WeatherPage() {
 }
 
 function LoadingState() {
+  /*
+   * Shaped like the Now tab it replaces — hero band, four tiles, two cards — so
+   * nothing jumps when the data lands. A single generic spinner would be less
+   * code and a worse first impression.
+   */
   return (
-    <div className="space-y-4">
-      <div className="wx-card p-6">
-        <Skeleton className="h-4 w-48" />
-        <Skeleton className="mt-4 h-16 w-40" />
-        <Skeleton className="mt-3 h-4 w-64" />
+    <div className="space-y-4" aria-busy="true" aria-label="Loading weather">
+      <div className="wx-skeleton" style={{ height: 260, borderRadius: "var(--wx-radius-card)" }} />
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="wx-skeleton" style={{ height: 88, borderRadius: "var(--wx-radius-control)" }} />
+        ))}
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="wx-card p-6">
-          <Skeleton className="h-40 w-full" />
-        </div>
-        <div className="wx-card p-6">
-          <Skeleton className="h-40 w-full" />
-        </div>
-      </div>
+      <CardSkeleton height={120} />
+      <CardSkeleton height={200} />
     </div>
   );
 }

@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Card, Chip, Meter, Metric, Notice, SectionBody, WindArrow } from "./ui";
+import { useState } from "react";
+import { Card, Chip, EmptyState, Meter, Metric, SectionBody, WindArrow } from "./ui";
+import { WeatherHero } from "./WeatherHero";
+import { MetricTile, RadialRing, Sparkline, UVScale, WindCompass } from "./MetricTile";
+import { SunArc } from "./SunArc";
+import { CloudLightningIcon, ConditionIcon, SunIcon } from "./icons";
 import { SeriesChart } from "./Chart";
 import { MapPanel } from "./MapPanel";
 import {
-  clockAt,
   dash,
   formatDayMonth,
   formatDistance,
@@ -23,11 +26,10 @@ import {
   nextPrecipitation,
   pressureTrend,
   relativeFromNow,
-  tzOffsetMinutes,
   uviCategory,
-  weatherEmoji,
   windDescription,
 } from "@/lib/weather-format";
+import type { ConditionKind } from "@/lib/weather-format";
 import type { ThemeName, UnitSystem, WeatherOverview } from "@/lib/weather-types";
 
 export function NowPanel({
@@ -43,178 +45,152 @@ export function NowPanel({
 }) {
   const { sections, place } = overview;
   const current = sections.current.data?.periods?.[0] ?? null;
-  const observation = sections.observation.data;
-  const ob = observation?.ob ?? null;
   const sun = sections.sunMoon.data?.sun ?? null;
   const recentPeriods = sections.recent.data?.periods ?? [];
   const trend = pressureTrend(recentPeriods);
-  const offset =
-    tzOffsetMinutes(current?.dateTimeISO) ??
-    (isNum(place.tzoffset) ? place.tzoffset / 60 : null);
 
   const uv = uviCategory(current?.uvi);
-  const todayPop = sections.hourly.data?.periods?.[0]?.pop ?? null;
 
   return (
     <div className="space-y-4">
       <AlertsBlock overview={overview} hour12={hour12} />
 
-      <section className="wx-card overflow-hidden">
-        <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-          {/* Hero */}
-          <div>
-            <div className="wx-muted flex flex-wrap items-center gap-2 text-sm">
-              <span>{place.displayName}</span>
-              {offset !== null && (
-                <>
-                  <span className="wx-dim">·</span>
-                  <LocalClock offsetMinutes={offset} hour12={hour12} />
-                </>
-              )}
-            </div>
+      <WeatherHero overview={overview} units={units} hour12={hour12} />
 
-            {current ? (
-              <>
-                <div className="mt-3 flex items-start gap-4">
-                  <span className="text-6xl leading-none sm:text-7xl" aria-hidden>
-                    {weatherEmoji(current.icon, current.weatherPrimaryCoded)}
-                  </span>
-                  <div>
-                    <div className="text-6xl font-light leading-none tracking-tight sm:text-7xl">
-                      {formatTemp(current.tempC, current.tempF, units)}
-                    </div>
-                    <div className="wx-muted mt-1 text-sm">
-                      Feels like{" "}
-                      <span className="text-[var(--wx-text)]">
-                        {formatTemp(current.feelslikeC, current.feelslikeF, units)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+      {/*
+        Four primary tiles. These are the readings people look for by name;
+        everything else is one tap away in Details below. Each pairs the number
+        with a second encoding — a bearing, a place on the UV scale, a
+        proportion — so the tile is readable at a glance and not just legible.
+      */}
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <MetricTile
+          label="Wind"
+          value={formatSpeed(current?.windSpeedKPH, current?.windSpeedMPH, units)}
+          hint={
+            current?.windDir
+              ? `${current.windDir}${isNum(current.windGustKPH) ? ` · gusts ${formatSpeed(current.windGustKPH, current.windGustMPH, units)}` : ""}`
+              : windDescription(current?.windSpeedKPH ?? null)
+          }
+          visual={<WindCompass deg={current?.windDirDEG} />}
+        />
+        <MetricTile
+          label="Humidity"
+          value={formatPercent(current?.humidity)}
+          hint={humidityComfort(current?.dewpointC)}
+          visual={<RadialRing value={current?.humidity ?? null} label="Relative humidity" />}
+        />
+        <MetricTile
+          label="UV index"
+          value={isNum(current?.uvi) ? current.uvi.toFixed(0) : dash}
+          hint={uv.label}
+          visual={<UVScale value={current?.uvi} />}
+        />
+        <MetricTile
+          label="Visibility"
+          value={formatDistance(current?.visibilityKM, current?.visibilityMI, units)}
+          hint={
+            isNum(current?.visibilityKM)
+              ? current.visibilityKM >= 10
+                ? "Clear"
+                : current.visibilityKM >= 4
+                  ? "Moderate"
+                  : "Poor"
+              : undefined
+          }
+          visual={
+            <RadialRing
+              value={isNum(current?.visibilityKM) ? Math.min(100, (current.visibilityKM / 16) * 100) : null}
+              color="var(--wx-good)"
+              label="Visibility as a proportion of 16 km"
+              showValue={false}
+            />
+          }
+        />
+      </div>
 
-                <p className="mt-3 text-lg">
-                  {current.weather ?? current.weatherPrimary ?? dash}
-                </p>
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {isNum(current.windSpeedKPH) && (
-                    <Chip tone="accent">
-                      <WindArrow deg={current.windDirDEG} />
-                      {current.windDir ?? ""}{" "}
-                      {formatSpeed(current.windSpeedKPH, current.windSpeedMPH, units)}
-                    </Chip>
-                  )}
-                  {isNum(todayPop) && todayPop > 0 && (
-                    <Chip tone="accent">☔ {formatPercent(todayPop)} chance</Chip>
-                  )}
-                  {isNum(current.uvi) && (
-                    <Chip tone={current.uvi >= 6 ? "warn" : "default"}>
-                      UV {current.uvi.toFixed(0)} · {uv.label}
-                    </Chip>
-                  )}
-                  {ob?.flightRule && (
-                    <Chip
-                      tone={
-                        ob.flightRule === "VFR"
-                          ? "good"
-                          : ob.flightRule === "MVFR"
-                            ? "accent"
-                            : "warn"
-                      }
-                      title="Aviation flight rules at the reporting station"
-                    >
-                      {ob.flightRule}
-                    </Chip>
-                  )}
-                </div>
-              </>
-            ) : (
-              <Notice tone="warn">
-                {sections.current.error ?? "Current conditions unavailable."}
-              </Notice>
-            )}
-
-            {sections.phrase.data?.periods?.[0]?.text && (
-              <p className="wx-muted mt-4 border-l-2 border-[var(--wx-accent-border)] pl-3 text-sm leading-relaxed">
-                {sections.phrase.data.periods[0].text}
-              </p>
-            )}
-          </div>
-
-          {/* Sun + headline numbers */}
-          <div className="grid grid-cols-2 gap-2 self-start sm:grid-cols-3">
-            <Metric
-              label="Dew point"
-              icon="💧"
-              value={formatTemp(current?.dewpointC, current?.dewpointF, units)}
-              hint={humidityComfort(current?.dewpointC)}
-            />
-            <Metric
-              label="Humidity"
-              icon="🌫️"
-              value={formatPercent(current?.humidity)}
-            />
-            <Metric
-              label="Pressure"
-              icon="🎚️"
-              value={formatPressure(current?.pressureMB, current?.pressureIN, units)}
-              hint={
-                trend
-                  ? `${trend.direction} ${Math.abs(trend.changeMB).toFixed(1)} mb/24h`
-                  : undefined
-              }
-            />
-            <Metric
-              label="Visibility"
-              icon="👁️"
-              value={formatDistance(
-                current?.visibilityKM,
-                current?.visibilityMI,
-                units
-              )}
-            />
-            <Metric
-              label="Cloud cover"
-              icon="☁️"
-              value={formatPercent(current?.sky)}
-            />
-            <Metric
-              label="Ceiling"
-              icon="🛫"
-              value={
-                isNum(current?.ceilingFT) || isNum(current?.ceilingM)
-                  ? formatHeight(current?.ceilingM, current?.ceilingFT, units)
-                  : "Unlimited"
-              }
-            />
-            <Metric
-              label="Sunrise"
-              icon="🌅"
-              value={formatTime(sun?.riseISO, hour12)}
-              hint={
-                sun?.twilight?.civilBeginISO
-                  ? `Dawn ${formatTime(sun.twilight.civilBeginISO, hour12)}`
-                  : undefined
-              }
-            />
-            <Metric
-              label="Sunset"
-              icon="🌇"
-              value={formatTime(sun?.setISO, hour12)}
-              hint={
-                sun?.twilight?.civilEndISO
-                  ? `Dusk ${formatTime(sun.twilight.civilEndISO, hour12)}`
-                  : undefined
-              }
-            />
-            <Metric
-              label="Elevation"
-              icon="⛰️"
-              value={formatHeight(place.elevM, place.elevFT, units)}
-            />
-          </div>
+      {/*
+        The secondary readings. A <details> rather than custom state: it is
+        keyboard operable, announced correctly and remembers nothing, which is
+        the right behaviour for a panel you open to check one number.
+      */}
+      <details className="wx-details">
+        <summary className="wx-details-summary">
+          <span>Details</span>
+          <span className="wx-dim text-xs">
+            dew point · pressure · cloud · ceiling · elevation
+          </span>
+        </summary>
+        <div className="grid grid-cols-2 gap-2 p-3 pt-0 sm:grid-cols-3 lg:grid-cols-5">
+          <MetricTile
+            label="Dew point"
+            value={formatTemp(current?.dewpointC, current?.dewpointF, units)}
+            hint={humidityComfort(current?.dewpointC)}
+          />
+          <MetricTile
+            label="Pressure"
+            value={formatPressure(current?.pressureMB, current?.pressureIN, units)}
+            hint={
+              trend
+                ? `${trend.direction} ${Math.abs(trend.changeMB).toFixed(1)} mb/24h`
+                : undefined
+            }
+            visual={
+              <Sparkline
+                values={recentPeriods.map((p) => p.pressureMB ?? null)}
+                direction={trend?.direction ?? null}
+              />
+            }
+          />
+          <MetricTile
+            label="Cloud cover"
+            value={formatPercent(current?.sky)}
+            visual={<RadialRing value={current?.sky ?? null} size={44} label="Cloud cover" />}
+          />
+          <MetricTile
+            label="Ceiling"
+            value={
+              isNum(current?.ceilingFT) || isNum(current?.ceilingM)
+                ? formatHeight(current?.ceilingM, current?.ceilingFT, units)
+                : "Unlimited"
+            }
+          />
+          <MetricTile
+            label="Elevation"
+            value={formatHeight(place.elevM, place.elevFT, units)}
+          />
         </div>
-      </section>
+      </details>
+
+      <Card title="Sun" subtitle="Today's arc, with the sun at its current position">
+        <SectionBody section={sections.sunMoon}>
+          {() => (
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] sm:items-center">
+              <SunArc riseISO={sun?.riseISO} setISO={sun?.setISO} hour12={hour12} />
+              <div className="grid grid-cols-2 gap-2">
+                <MetricTile
+                  label="Sunrise"
+                  value={formatTime(sun?.riseISO, hour12)}
+                  hint={
+                    sun?.twilight?.civilBeginISO
+                      ? `Dawn ${formatTime(sun.twilight.civilBeginISO, hour12)}`
+                      : undefined
+                  }
+                />
+                <MetricTile
+                  label="Sunset"
+                  value={formatTime(sun?.setISO, hour12)}
+                  hint={
+                    sun?.twilight?.civilEndISO
+                      ? `Dusk ${formatTime(sun.twilight.civilEndISO, hour12)}`
+                      : undefined
+                  }
+                />
+              </div>
+            </div>
+          )}
+        </SectionBody>
+      </Card>
 
       <NextRainCard overview={overview} units={units} hour12={hour12} />
 
@@ -438,7 +414,9 @@ export function NowPanel({
                   null;
                 return (
                   <div className="wx-inset px-3 py-2 text-sm">
-                    <span aria-hidden>⚡ </span>
+                    <span className="mr-1.5 inline-flex align-[-3px]" style={{ color: "var(--wx-warn)" }} aria-hidden>
+                      <CloudLightningIcon size={16} />
+                    </span>
                     {count > 0 ? (
                       <>
                         <span className="font-medium">{count.toLocaleString()}</span>{" "}
@@ -500,19 +478,19 @@ function NextRainCard({
 
   let headline: string;
   let detail: string | null = null;
-  let emoji = "🌂";
+  let iconKind: ConditionKind = "clear";
   let tone: "good" | "accent" | "warn" = "good";
 
   if (next.state === "none") {
     headline = "No rain expected";
     detail = "Nothing in the next 10 days of forecast.";
-    emoji = "☀️";
+    iconKind = "clear";
   } else if (next.state === "now") {
     headline = `${next.type} falling now`;
     detail = next.endISO
       ? `Easing around ${formatTime(next.endISO, hour12)}`
       : "Expected to continue for at least the next hour";
-    emoji = "🌧️";
+    iconKind = "rain";
     tone = "warn";
   } else if (next.precision === "minute") {
     // The nowcast can put the start in the current minute; "in 0 min" reads oddly.
@@ -523,7 +501,7 @@ function NextRainCard({
     detail = `Starting around ${formatTime(next.startISO, hour12)}${
       next.endISO ? `, easing by ${formatTime(next.endISO, hour12)}` : ""
     }`;
-    emoji = "🌦️";
+    iconKind = "showers";
     tone = "warn";
   } else if (next.precision === "hour") {
     const hours = next.minutesAway === null ? null : Math.round(next.minutesAway / 60);
@@ -534,14 +512,14 @@ function NextRainCard({
     detail = `From ${formatWeekday(next.startISO)} ${formatTime(next.startISO, hour12)}${
       next.endISO ? ` until about ${formatTime(next.endISO, hour12)}` : ""
     }`;
-    emoji = "🌦️";
+    iconKind = "showers";
     tone = "accent";
   } else {
     headline = `${next.type} likely ${formatWeekday(next.startISO)}`;
     detail = `Next wet day is ${formatWeekday(next.startISO)} ${formatDayMonth(
       next.startISO
     )} — nothing before then`;
-    emoji = "🌤️";
+    iconKind = "fair";
     tone = "accent";
   }
 
@@ -554,26 +532,41 @@ function NextRainCard({
           ? "From the hourly forecast"
           : "From the 10-day outlook";
 
+  /*
+   * With nothing wet in ten days there is no series to draw — the old card
+   * rendered a chart whose axis ran from -1.2 to 1.2 around a flat line of
+   * zeroes, which looked like a broken chart rather than a dry fortnight.
+   */
+  if (next.state === "none") {
+    return (
+      <Card title="Next rain">
+        <EmptyState
+          art={<SunIcon size={44} />}
+          title="Dry for the next 10 days"
+          note="Nothing in the forecast — neither the nowcast nor the 10-day outlook has any precipitation."
+        />
+      </Card>
+    );
+  }
+
   return (
     <Card title="Next rain" subtitle={precisionNote ?? undefined}>
-      <div className="flex flex-wrap items-center gap-4">
-        <span className="text-5xl leading-none" aria-hidden>
-          {emoji}
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4">
+        <span className="shrink-0" style={{ color: "var(--wx-accent)" }} aria-hidden>
+          <ConditionIcon kind={iconKind} size={44} />
         </span>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0">
           <p className="text-xl font-semibold leading-tight sm:text-2xl">
             {headline}
           </p>
           {detail && <p className="wx-muted mt-1 text-sm">{detail}</p>}
         </div>
-        {next.state !== "none" && (
-          <Chip tone={tone}>
-            {next.precision === "minute" ? "Nowcast" : `${label} expected`}
-          </Chip>
-        )}
+        <Chip tone={tone}>
+          {next.precision === "minute" ? "Nowcast" : `${label} expected`}
+        </Chip>
       </div>
 
-      {next.state !== "none" && (
+      {(
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Metric
             label="Chance"
@@ -605,29 +598,6 @@ function NextRainCard({
         </div>
       )}
     </Card>
-  );
-}
-
-function LocalClock({
-  offsetMinutes,
-  hour12,
-}: {
-  offsetMinutes: number;
-  hour12: boolean;
-}) {
-  const [now, setNow] = useState<Date | null>(null);
-
-  useEffect(() => {
-    setNow(new Date());
-    const timer = setInterval(() => setNow(new Date()), 20_000);
-    return () => clearInterval(timer);
-  }, []);
-
-  if (!now) return null;
-  return (
-    <span title="Local time at this location">
-      {clockAt(now, offsetMinutes, hour12)} local
-    </span>
   );
 }
 

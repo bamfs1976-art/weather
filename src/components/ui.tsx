@@ -47,18 +47,78 @@ export function SectionBody<T>({
   section,
   children,
   empty = "No data available.",
+  onRetry,
 }: {
   section: Section<T> | undefined;
   children: (data: T) => ReactNode;
   empty?: string;
+  /**
+   * Offered on failures worth retrying. A missing subscription or an inland
+   * point with no tide gauge will never succeed on a second attempt, so the
+   * button appears only for transport-level codes — a retry that cannot work is
+   * worse than no retry at all.
+   */
+  onRetry?: () => void;
 }) {
   if (!section) {
     return <Notice>{empty}</Notice>;
   }
   if (!section.ok || section.data === null) {
-    return <Notice tone={section.code === "no_credentials" ? "warn" : "muted"}>{section.error ?? empty}</Notice>;
+    const retryable =
+      onRetry !== undefined &&
+      (section.code === "timeout" ||
+        section.code === "network" ||
+        section.code === "bad_response" ||
+        (section.code ?? "").startsWith("http_5"));
+    return (
+      <Notice tone={section.code === "no_credentials" ? "warn" : "muted"}>
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <span>{section.error ?? empty}</span>
+          {retryable && (
+            <button type="button" className="wx-retry" onClick={onRetry}>
+              Try again
+            </button>
+          )}
+        </span>
+      </Notice>
+    );
   }
   return <>{children(section.data)}</>;
+}
+
+/**
+ * A card-shaped placeholder for first load.
+ *
+ * The height is passed in so the placeholder occupies the same space as the
+ * card that replaces it — the point of a skeleton is that nothing moves when
+ * the data lands.
+ */
+export function CardSkeleton({ height = 180, title = true }: { height?: number; title?: boolean }) {
+  return (
+    <section className="wx-card p-4 sm:p-5" aria-hidden>
+      {title && <div className="wx-skeleton mb-3 h-3.5 w-32 rounded" />}
+      <div className="wx-skeleton rounded-xl" style={{ height }} />
+    </section>
+  );
+}
+
+/** A calm stand-in for "nothing to show", used where a chart of zeroes would lie. */
+export function EmptyState({
+  art,
+  title,
+  note,
+}: {
+  art?: ReactNode;
+  title: string;
+  note?: string;
+}) {
+  return (
+    <div className="wx-empty">
+      {art ? <div className="wx-empty-art">{art}</div> : null}
+      <p className="wx-empty-title">{title}</p>
+      {note ? <p className="wx-empty-note">{note}</p> : null}
+    </div>
+  );
 }
 
 export function Notice({
@@ -75,7 +135,7 @@ export function Notice({
         ? "text-[var(--wx-danger)] border-[color-mix(in_srgb,var(--wx-danger)_35%,transparent)] bg-[var(--wx-danger-bg)]"
         : "wx-muted border-[var(--wx-border)] bg-[var(--wx-surface)]";
   return (
-    <p className={`rounded-lg border px-3 py-2.5 text-sm ${color}`}>{children}</p>
+    <div className={`rounded-xl border px-3 py-2.5 text-sm ${color}`}>{children}</div>
   );
 }
 

@@ -12,8 +12,19 @@ html {
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--wx-font-body);
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Two families, loaded in layout.tsx. Inter Tight carries headings and every
+ * numeric readout; Inter carries body copy. Both fall back through the system
+ * stack, so a blocked font request degrades to the previous look rather than to
+ * Times New Roman.
+ */
+:root {
+  --wx-font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --wx-font-display: "Inter Tight", "Inter", system-ui, -apple-system, sans-serif;
 }
 
 /*
@@ -27,46 +38,72 @@ body {
 
 .wx {
   /* --- light (default) --- */
-  --wx-bg: #eef3fb;
-  --wx-bg-2: #f7fafe;
-  --wx-surface: rgba(255, 255, 255, 0.78);
-  --wx-surface-strong: #ffffff;
-  --wx-inset: rgba(255, 255, 255, 0.72);
-  --wx-border: rgba(15, 32, 87, 0.12);
-  --wx-border-strong: rgba(15, 32, 87, 0.26);
-  --wx-hover: rgba(15, 32, 87, 0.05);
+  --wx-bg: oklch(0.97 0.012 250);
+  --wx-bg-2: oklch(0.985 0.008 250);
+  --wx-surface: oklch(1 0 0 / 0.82);
+  --wx-surface-strong: oklch(1 0 0);
+  --wx-inset: oklch(0.985 0.006 250 / 0.9);
+  --wx-border: oklch(0.22 0.05 260 / 0.13);
+  --wx-border-strong: oklch(0.22 0.05 260 / 0.28);
+  --wx-hover: oklch(0.22 0.05 260 / 0.05);
 
-  --wx-text: #10204d;
-  --wx-muted: #4d5f80;
-  --wx-dim: #74839f;
+  --wx-text: oklch(0.22 0.05 260);
+  --wx-muted: oklch(0.46 0.038 258);
+  --wx-dim: oklch(0.5 0.032 256);
 
-  --wx-accent: #0369a1;
-  --wx-accent-bg: rgba(3, 105, 161, 0.12);
-  --wx-accent-border: rgba(3, 105, 161, 0.4);
-  --wx-accent-text: #075985;
+  /* Cyan is the app's water/rain accent; amber below is sun/UV only. */
+  --wx-accent: oklch(0.52 0.115 230);
+  --wx-accent-bg: oklch(0.52 0.115 230 / 0.13);
+  --wx-accent-border: oklch(0.52 0.115 230 / 0.42);
+  --wx-accent-text: oklch(0.42 0.1 233);
 
-  --wx-good: #047857;
-  --wx-good-bg: rgba(4, 120, 87, 0.1);
-  --wx-warn: #b45309;
-  --wx-warn-bg: rgba(180, 83, 9, 0.1);
-  --wx-danger: #b91c1c;
-  --wx-danger-bg: rgba(185, 28, 28, 0.1);
+  --wx-solar: oklch(0.63 0.15 62);
+  --wx-solar-bg: oklch(0.63 0.15 62 / 0.14);
 
-  --wx-hot: #c2410c;
-  --wx-cold: #0369a1;
+  --wx-good: oklch(0.53 0.12 162);
+  --wx-good-bg: oklch(0.53 0.12 162 / 0.11);
+  --wx-warn: oklch(0.55 0.13 62);
+  --wx-warn-bg: oklch(0.58 0.13 62 / 0.11);
+  --wx-danger: oklch(0.51 0.19 26);
+  --wx-danger-bg: oklch(0.51 0.19 26 / 0.11);
 
-  --wx-chart-grid: rgba(15, 32, 87, 0.13);
-  --wx-chart-text: rgba(16, 32, 77, 0.7);
-  --wx-track: rgba(15, 32, 87, 0.12);
-  --wx-skeleton: rgba(15, 32, 87, 0.1);
-  --wx-shadow: 0 1px 2px rgba(15, 32, 87, 0.06), 0 8px 24px rgba(15, 32, 87, 0.06);
+  --wx-hot: oklch(0.55 0.17 42);
+  --wx-cold: oklch(0.52 0.115 230);
+
+  --wx-chart-grid: oklch(0.22 0.05 260 / 0.11);
+  --wx-chart-text: oklch(0.46 0.038 258);
+  --wx-track: oklch(0.22 0.05 260 / 0.1);
+  --wx-skeleton: oklch(0.22 0.05 260 / 0.08);
+
+  /* One elevation token. Anything needing "more" is wrong. */
+  --wx-shadow: 0 1px 2px oklch(0.22 0.05 260 / 0.05), 0 10px 30px oklch(0.22 0.05 260 / 0.07);
+
+  /* Two radii: cards and controls. */
+  --wx-radius-card: 20px;
+  --wx-radius-control: 12px;
+
+  /*
+   * Condition skies. Each is a full gradient rather than a colour so the hero
+   * can swap the whole band on one token. The lightest stop of each is capped
+   * so that white at 90% opacity still clears 4.5:1 — solved numerically rather
+   * than eyeballed, because the first attempt looked fine and measured 3.6:1 on
+   * a clear day. The hero always paints light type regardless of theme, so
+   * these do not change between light and dark.
+   */
+  --sky-clear-day: linear-gradient(165deg, oklch(0.52 0.14 240) 0%, oklch(0.44 0.13 245) 45%, oklch(0.37 0.11 252) 100%);
+  --sky-clear-night: linear-gradient(165deg, oklch(0.3 0.08 268) 0%, oklch(0.22 0.06 265) 50%, oklch(0.16 0.05 262) 100%);
+  --sky-cloud: linear-gradient(165deg, oklch(0.53 0.045 250) 0%, oklch(0.44 0.04 253) 50%, oklch(0.36 0.038 256) 100%);
+  --sky-rain: linear-gradient(165deg, oklch(0.46 0.06 238) 0%, oklch(0.38 0.055 242) 50%, oklch(0.3 0.05 248) 100%);
+  --sky-storm: linear-gradient(165deg, oklch(0.34 0.05 275) 0%, oklch(0.26 0.045 272) 50%, oklch(0.18 0.04 268) 100%);
+  --sky-fog: linear-gradient(165deg, oklch(0.53 0.02 250) 0%, oklch(0.45 0.018 252) 50%, oklch(0.38 0.016 254) 100%);
+  --sky-snow: linear-gradient(165deg, oklch(0.53 0.035 245) 0%, oklch(0.45 0.032 248) 50%, oklch(0.38 0.03 252) 100%);
 
   min-height: 100vh;
   color: var(--wx-text);
   background-color: var(--wx-bg);
   background-image:
-    radial-gradient(1200px 600px at 12% -10%, rgba(3, 105, 161, 0.1), transparent 60%),
-    radial-gradient(1000px 500px at 88% 0%, rgba(99, 102, 241, 0.08), transparent 55%),
+    radial-gradient(1200px 600px at 12% -10%, oklch(0.52 0.115 230 / 0.1), transparent 60%),
+    radial-gradient(1000px 500px at 88% 0%, oklch(0.62 0.14 240 / 0.07), transparent 55%),
     linear-gradient(180deg, var(--wx-bg-2) 0%, var(--wx-bg) 900px);
   background-repeat: no-repeat;
   font-variant-numeric: tabular-nums;
@@ -78,50 +115,53 @@ body {
 }
 
 :root[data-theme="dark"] .wx {
-  --wx-bg: #070d1b;
-  --wx-bg-2: #0d1628;
-  --wx-surface: rgba(255, 255, 255, 0.05);
-  --wx-surface-strong: rgba(255, 255, 255, 0.09);
-  --wx-inset: rgba(4, 10, 22, 0.45);
-  --wx-border: rgba(148, 163, 184, 0.18);
-  --wx-border-strong: rgba(148, 163, 184, 0.32);
-  --wx-hover: rgba(255, 255, 255, 0.06);
+  --wx-bg: oklch(0.16 0.035 260);
+  --wx-bg-2: oklch(0.19 0.038 261);
+  --wx-surface: oklch(0.22 0.04 262);
+  --wx-surface-strong: oklch(0.26 0.042 262);
+  --wx-inset: oklch(0.13 0.03 260 / 0.6);
+  --wx-border: oklch(0.72 0.03 258 / 0.18);
+  --wx-border-strong: oklch(0.72 0.03 258 / 0.34);
+  --wx-hover: oklch(1 0 0 / 0.06);
 
-  --wx-text: #e6edf7;
-  --wx-muted: #94a3b8;
-  --wx-dim: #64748b;
+  --wx-text: oklch(0.95 0.012 258);
+  --wx-muted: oklch(0.76 0.025 256);
+  --wx-dim: oklch(0.64 0.028 256);
 
-  --wx-accent: #38bdf8;
-  --wx-accent-bg: rgba(56, 189, 248, 0.16);
-  --wx-accent-border: rgba(56, 189, 248, 0.55);
-  --wx-accent-text: #e0f2fe;
+  --wx-accent: oklch(0.78 0.12 224);
+  --wx-accent-bg: oklch(0.78 0.12 224 / 0.16);
+  --wx-accent-border: oklch(0.78 0.12 224 / 0.55);
+  --wx-accent-text: oklch(0.93 0.05 222);
 
-  --wx-good: #34d399;
-  --wx-good-bg: rgba(52, 211, 153, 0.12);
-  --wx-warn: #f59e0b;
-  --wx-warn-bg: rgba(245, 158, 11, 0.1);
-  --wx-danger: #ef4444;
-  --wx-danger-bg: rgba(239, 68, 68, 0.1);
+  --wx-solar: oklch(0.8 0.14 72);
+  --wx-solar-bg: oklch(0.8 0.14 72 / 0.16);
 
-  --wx-hot: #fb923c;
-  --wx-cold: #60a5fa;
+  --wx-good: oklch(0.79 0.14 165);
+  --wx-good-bg: oklch(0.79 0.14 165 / 0.13);
+  --wx-warn: oklch(0.81 0.14 72);
+  --wx-warn-bg: oklch(0.81 0.14 72 / 0.12);
+  --wx-danger: oklch(0.7 0.17 24);
+  --wx-danger-bg: oklch(0.7 0.17 24 / 0.13);
 
-  --wx-chart-grid: rgba(148, 163, 184, 0.16);
-  --wx-chart-text: rgba(148, 163, 184, 0.85);
-  --wx-track: rgba(148, 163, 184, 0.25);
-  --wx-skeleton: rgba(148, 163, 184, 0.18);
-  --wx-shadow: none;
+  --wx-hot: oklch(0.77 0.14 48);
+  --wx-cold: oklch(0.78 0.12 236);
+
+  --wx-chart-grid: oklch(0.72 0.03 258 / 0.16);
+  --wx-chart-text: oklch(0.76 0.025 256);
+  --wx-track: oklch(0.72 0.03 258 / 0.22);
+  --wx-skeleton: oklch(0.72 0.03 258 / 0.14);
+  --wx-shadow: 0 1px 2px oklch(0 0 0 / 0.4), 0 10px 30px oklch(0 0 0 / 0.35);
 
   background-image:
-    radial-gradient(1200px 600px at 12% -10%, rgba(56, 189, 248, 0.16), transparent 60%),
-    radial-gradient(1000px 500px at 88% 0%, rgba(129, 140, 248, 0.14), transparent 55%),
-    linear-gradient(180deg, var(--wx-bg-2) 0%, var(--wx-bg) 900px, #050912 1600px);
+    radial-gradient(1200px 600px at 12% -10%, oklch(0.78 0.12 224 / 0.13), transparent 60%),
+    radial-gradient(1000px 500px at 88% 0%, oklch(0.62 0.09 250 / 0.1), transparent 55%),
+    linear-gradient(180deg, var(--wx-bg-2) 0%, var(--wx-bg) 900px);
 }
 
 .wx-card {
   background: var(--wx-surface);
   border: 1px solid var(--wx-border);
-  border-radius: 1rem;
+  border-radius: var(--wx-radius-card);
   box-shadow: var(--wx-shadow);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -135,7 +175,7 @@ body {
 .wx-inset {
   background: var(--wx-inset);
   border: 1px solid var(--wx-border);
-  border-radius: 0.75rem;
+  border-radius: var(--wx-radius-control);
 }
 
 .wx-muted {
@@ -209,9 +249,10 @@ body {
 }
 
 .wx-field {
+  min-height: 44px;
   background: var(--wx-surface-strong);
   border: 1px solid var(--wx-border);
-  border-radius: 0.6rem;
+  border-radius: var(--wx-radius-control);
   padding: 0.5rem 0.75rem;
   outline: none;
 }
@@ -225,8 +266,9 @@ body {
 }
 
 .wx-btn {
+  min-height: 44px;
   border: 1px solid var(--wx-border);
-  border-radius: 0.6rem;
+  border-radius: var(--wx-radius-control);
   background: var(--wx-surface);
   padding: 0.5rem 0.85rem;
   cursor: pointer;
@@ -275,4 +317,791 @@ body {
   .wx-skeleton {
     animation: none;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Display type                                                        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Headings and numbers use the display face; tabular numerals stop a
+ * temperature or a clock jittering sideways as digits change, which is the
+ * single most noticeable difference between a dashboard and a weather app.
+ */
+.wx h1,
+.wx h2,
+.wx h3,
+.wx .wx-display {
+  font-family: var(--wx-font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.015em;
+}
+
+.wx-num {
+  font-family: var(--wx-font-display);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* Focus                                                               */
+/* ------------------------------------------------------------------ */
+
+/*
+ * One visible ring everywhere. :focus-visible only, so pointer users never see
+ * it, and it sits outside the element so it survives overflow clipping.
+ */
+.wx :is(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--wx-accent);
+  outline-offset: 2px;
+  border-radius: var(--wx-radius-control);
+}
+
+/* ------------------------------------------------------------------ */
+/* Motion                                                              */
+/* ------------------------------------------------------------------ */
+
+@keyframes wx-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/*
+ * Cards enter in sequence. The delay is set inline per card as --wx-i, so the
+ * stagger costs one custom property rather than a class per position.
+ */
+.wx-stagger > * {
+  animation: wx-rise 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--wx-i, 0) * 40ms);
+}
+
+@keyframes wx-spin { to { transform: rotate(360deg); } }
+.wx-spin { animation: wx-spin 900ms linear infinite; }
+
+@keyframes wx-drift {
+  from { transform: translate3d(-12%, 0, 0); }
+  to   { transform: translate3d(12%, 0, 0); }
+}
+
+@keyframes wx-fall {
+  from { background-position: 0 -220px; }
+  to   { background-position: 0 220px; }
+}
+
+@keyframes wx-breathe {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50%      { opacity: 0.85; transform: scale(1.06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wx-stagger > *,
+  .wx-spin,
+  .wx-sky-layer {
+    animation: none !important;
+  }
+  .wx-stagger > * { opacity: 1; transform: none; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Hero                                                                */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Full-bleed: the band breaks out of the page's centred column using a 50vw
+ * margin trick, so the gradient reaches both screen edges while its contents
+ * stay aligned with everything below.
+ */
+.wx-hero {
+  position: relative;
+  isolation: isolate;
+  margin-inline: calc(50% - 50vw);
+  padding-inline: max(1rem, calc(50vw - 36rem));
+  border-radius: 0;
+  overflow: hidden;
+  color: #fff;
+}
+
+@media (min-width: 640px) {
+  .wx-hero {
+    margin-inline: 0;
+    padding-inline: 0;
+    border-radius: var(--wx-radius-card);
+  }
+}
+
+.wx-hero-inner {
+  position: relative;
+  z-index: 1;
+  padding: 1.5rem 1rem 1.75rem;
+}
+
+@media (min-width: 640px) {
+  .wx-hero-inner { padding: 1.75rem; }
+}
+
+.wx-hero-place {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  /* Long place names truncate rather than wrapping to three lines on a phone. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wx-hero-time {
+  margin: 0.125rem 0 0;
+  font-size: 0.8125rem;
+  /* 0.9 is the floor that clears 4.5:1 on the palest sky; see contrast-check. */
+  color: rgba(255, 255, 255, 0.9);
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-hero-icon { color: rgba(255, 255, 255, 0.95); }
+
+.wx-hero-temp-row {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 0.25rem;
+}
+
+.wx-hero-temp {
+  font-size: clamp(72px, 18vw, 140px);
+  font-weight: 300;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+}
+
+.wx-hero-condition {
+  margin: 0.25rem 0 0;
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+
+.wx-hero-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 1rem;
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.wx-hero-facts strong { font-weight: 600; color: #fff; }
+
+.wx-hero-phrase {
+  margin: 1rem 0 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid rgba(255, 255, 255, 0.45);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* --- animated sky layers ------------------------------------------- */
+
+.wx-sky-layer {
+  position: absolute;
+  inset: -10% -20%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Two soft ellipses drifting in opposite directions read as moving cloud. */
+.wx-sky-cloud {
+  background:
+    radial-gradient(closed-ellipse at 30% 40%, rgba(255, 255, 255, 0.16), transparent 60%),
+    radial-gradient(60% 40% at 70% 55%, rgba(255, 255, 255, 0.12), transparent 65%);
+  background:
+    radial-gradient(45% 30% at 30% 40%, rgba(255, 255, 255, 0.16), transparent 60%),
+    radial-gradient(60% 40% at 70% 55%, rgba(255, 255, 255, 0.12), transparent 65%);
+  animation: wx-drift 26s ease-in-out infinite alternate;
+}
+
+/*
+ * Rain is a repeating linear gradient of thin translucent streaks, scrolled
+ * vertically. One element, no DOM per drop.
+ */
+.wx-sky-rain {
+  background-image: repeating-linear-gradient(
+    14deg,
+    rgba(255, 255, 255, 0.16) 0 1px,
+    transparent 1px 9px
+  );
+  background-size: auto 220px;
+  animation: wx-fall 1.1s linear infinite;
+  opacity: 0.55;
+}
+
+/* A slow breathing glow behind the temperature on a clear day. */
+.wx-sky-glow {
+  background: radial-gradient(38% 46% at 78% 18%, rgba(255, 236, 190, 0.42), transparent 62%);
+  animation: wx-breathe 9s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tiles                                                               */
+/* ------------------------------------------------------------------ */
+
+.wx-tile {
+  display: grid;
+  /* minmax(0,1fr) is what stops a long value forcing the tile wider than its
+     column and creating horizontal page scroll on a phone. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem;
+  background: var(--wx-inset);
+  border: 1px solid var(--wx-border);
+  border-radius: var(--wx-radius-control);
+  min-height: 88px;
+}
+
+.wx-tile-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--wx-dim);
+}
+
+.wx-tile-value {
+  margin-top: 0.125rem;
+  /* Scales down on narrow screens: at 390px two tiles share the row and a
+     fixed 22px "27 km/h" wraps mid-value. */
+  font-size: clamp(1.125rem, 4.6vw, 1.375rem);
+  font-weight: 500;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.wx-tile-hint {
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  color: var(--wx-muted);
+}
+
+.wx-uv-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  overflow: visible;
+}
+
+.wx-uv-marker {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 999px;
+  background: var(--wx-surface-strong);
+  border: 2px solid var(--wx-text);
+  transform: translateY(-50%);
+  transition: left 400ms ease-out;
+}
+
+.wx-uv-scale-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 0.625rem;
+  color: var(--wx-dim);
+}
+
+/* ------------------------------------------------------------------ */
+/* Tab bar                                                             */
+/* ------------------------------------------------------------------ */
+
+.wx-tabs-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  margin-inline: calc(50% - 50vw);
+  padding-inline: max(1rem, calc(50vw - 36rem));
+  background: color-mix(in oklab, var(--wx-bg) 78%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid transparent;
+  transition: border-color 150ms ease-out;
+}
+
+.wx-tabs-wrap[data-stuck="true"] { border-bottom-color: var(--wx-border); }
+
+.wx-tabs-scroll {
+  position: relative;
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0.5rem 0;
+  /* Fade the content at both edges so a cut-off tab reads as "more this way"
+     rather than as a clipping bug. */
+  mask-image: linear-gradient(90deg, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+}
+
+.wx-tabs-scroll::-webkit-scrollbar { display: none; }
+
+.wx-tab {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  /* 44px minimum tap target. */
+  min-height: 44px;
+  padding: 0 0.9rem;
+  border: 0;
+  background: transparent;
+  color: var(--wx-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 150ms ease-out;
+}
+
+.wx-tab:hover { color: var(--wx-text); }
+.wx-tab[aria-selected="true"] { color: var(--wx-accent-text); }
+
+/* The sliding pill sits behind the labels and is moved by transform, so it
+   animates on the compositor rather than by re-laying-out the row. */
+.wx-tab-pill {
+  position: absolute;
+  top: 0.5rem;
+  left: 0;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--wx-accent-bg);
+  border: 1px solid var(--wx-accent-border);
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), width 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wx-tab-pill { transition: none; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Controls                                                            */
+/* ------------------------------------------------------------------ */
+
+.wx-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--wx-dim);
+  pointer-events: none;
+  display: inline-flex;
+}
+
+.wx-search-clear {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--wx-dim);
+  cursor: pointer;
+}
+
+.wx-search-clear:hover { background: var(--wx-hover); color: var(--wx-text); }
+
+/* 44px minimum in both directions — the brief's tap-target floor. */
+.wx-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--wx-border);
+  border-radius: var(--wx-radius-control);
+  background: var(--wx-surface);
+  color: var(--wx-muted);
+  cursor: pointer;
+  transition: background 150ms ease-out, color 150ms ease-out;
+}
+
+.wx-icon-btn:hover:not(:disabled) { background: var(--wx-hover); color: var(--wx-text); }
+.wx-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.wx-icon-btn[aria-pressed="true"] {
+  background: var(--wx-accent-bg);
+  border-color: var(--wx-accent-border);
+  color: var(--wx-accent-text);
+}
+
+.wx-combo {
+  position: absolute;
+  z-index: 40;
+  margin-top: 0.5rem;
+  width: 100%;
+  max-height: 18rem;
+  overflow: auto;
+  padding: 0.25rem;
+  list-style: none;
+  background: var(--wx-surface-strong);
+  border: 1px solid var(--wx-border);
+  border-radius: var(--wx-radius-control);
+  box-shadow: var(--wx-shadow);
+}
+
+.wx-combo-heading {
+  padding: 0.5rem 0.625rem 0.25rem;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--wx-dim);
+}
+
+.wx-combo-option {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.625rem;
+  text-align: left;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--wx-text);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.wx-combo-option.is-active { background: var(--wx-accent-bg); }
+.wx-combo-empty { padding: 0.75rem 0.625rem; font-size: 0.8125rem; color: var(--wx-muted); }
+
+.wx-chip-btn {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--wx-border);
+  border-radius: 999px;
+  background: var(--wx-surface);
+  color: var(--wx-muted);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.wx-chip-btn:hover { background: var(--wx-hover); color: var(--wx-text); }
+.wx-chip-btn.is-active {
+  background: var(--wx-accent-bg);
+  border-color: var(--wx-accent-border);
+  color: var(--wx-accent-text);
+}
+
+.wx-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.5rem);
+  z-index: 50;
+  width: 15rem;
+  padding: 0.75rem;
+  background: var(--wx-surface-strong);
+  border: 1px solid var(--wx-border);
+  border-radius: var(--wx-radius-card);
+  box-shadow: var(--wx-shadow);
+}
+
+.wx-seg-row { display: grid; gap: 0.3rem; }
+.wx-seg-row + .wx-seg-row { margin-top: 0.75rem; }
+
+.wx-seg-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--wx-dim);
+}
+
+.wx-seg {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 2px;
+  padding: 2px;
+  background: var(--wx-track);
+  border-radius: var(--wx-radius-control);
+}
+
+.wx-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--wx-muted);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.wx-seg-btn.is-active {
+  background: var(--wx-surface-strong);
+  color: var(--wx-text);
+  box-shadow: var(--wx-shadow);
+}
+
+/* ------------------------------------------------------------------ */
+/* Disclosure                                                          */
+/* ------------------------------------------------------------------ */
+
+.wx-details {
+  background: var(--wx-surface);
+  border: 1px solid var(--wx-border);
+  border-radius: var(--wx-radius-card);
+  box-shadow: var(--wx-shadow);
+  overflow: hidden;
+}
+
+.wx-details-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 52px;
+  padding: 0 1rem;
+  cursor: pointer;
+  font-weight: 500;
+  list-style: none;
+  user-select: none;
+}
+
+.wx-details-summary::-webkit-details-marker { display: none; }
+
+/* A chevron that rotates on open, drawn in CSS so no icon is needed here. */
+.wx-details-summary::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-right: 2px solid var(--wx-dim);
+  border-bottom: 2px solid var(--wx-dim);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 200ms ease-out;
+}
+
+.wx-details[open] .wx-details-summary::after {
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+
+.wx-details-summary:hover { background: var(--wx-hover); }
+
+/* ------------------------------------------------------------------ */
+/* Empty state                                                         */
+/* ------------------------------------------------------------------ */
+
+.wx-empty {
+  display: grid;
+  place-items: center;
+  gap: 0.5rem;
+  padding: 1.75rem 1rem;
+  text-align: center;
+}
+
+.wx-empty-art { color: var(--wx-accent); opacity: 0.55; }
+.wx-empty-title { font-weight: 500; }
+.wx-empty-note { font-size: 0.8125rem; color: var(--wx-muted); max-width: 32ch; }
+
+.wx-retry {
+  min-height: 32px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--wx-border-strong);
+  border-radius: 999px;
+  background: var(--wx-surface-strong);
+  color: var(--wx-text);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.wx-retry:hover { background: var(--wx-hover); }
+
+/* ------------------------------------------------------------------ */
+/* Charts                                                              */
+/* ------------------------------------------------------------------ */
+
+.wx-chart { position: relative; }
+
+.wx-chart text {
+  font-family: var(--wx-font-body);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The hit areas are focusable, so they need a ring — but a full-height column
+   outline is ugly, so the ring is drawn tight and dashed instead. */
+.wx-chart rect[role="button"]:focus-visible {
+  outline: 2px dashed var(--wx-accent);
+  outline-offset: -2px;
+}
+
+.wx-chart-tip {
+  position: absolute;
+  top: 0.25rem;
+  z-index: 5;
+  min-width: 8.5rem;
+  padding: 0.5rem 0.625rem;
+  background: var(--wx-surface-strong);
+  border: 1px solid var(--wx-border);
+  border-radius: var(--wx-radius-control);
+  box-shadow: var(--wx-shadow);
+  pointer-events: none;
+  font-size: 0.75rem;
+}
+
+.wx-chart-tip-title {
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+  color: var(--wx-text);
+}
+
+.wx-chart-tip-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.4rem;
+  line-height: 1.5;
+}
+
+.wx-chart-tip-swatch { width: 8px; height: 8px; border-radius: 999px; }
+.wx-chart-tip-label { color: var(--wx-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wx-chart-tip-value { color: var(--wx-text); font-weight: 500; }
+
+/* ------------------------------------------------------------------ */
+/* Map                                                                 */
+/* ------------------------------------------------------------------ */
+
+.wx-map-controls {
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--wx-radius-control);
+  /* Glass: a dark translucent slab regardless of theme, because it always sits
+     over map imagery rather than over the page background. */
+  background: oklch(0.16 0.035 260 / 0.62);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid oklch(1 0 0 / 0.16);
+  color: #fff;
+}
+
+.wx-map-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border: 1px solid oklch(1 0 0 / 0.22);
+  border-radius: var(--wx-radius-control);
+  background: oklch(1 0 0 / 0.12);
+  color: #fff;
+  cursor: pointer;
+}
+
+.wx-map-play:hover { background: oklch(1 0 0 / 0.2); }
+
+.wx-map-time-label {
+  flex: 0 0 auto;
+  min-width: 3.25rem;
+  text-align: right;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.wx-map-ticks {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  margin-top: 1px;
+  font-size: 0.625rem;
+  color: oklch(1 0 0 / 0.75);
+}
+
+.wx-map-ticks .is-now { text-align: center; font-weight: 600; color: #fff; }
+
+/* A range input styled to match, with a 44px-tall hit area but a thin track. */
+.wx-slider {
+  width: 100%;
+  /* 44px of hittable height; the visible track stays 4px via the track
+     pseudo-elements below. */
+  height: 44px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.wx-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: oklch(1 0 0 / 0.3);
+}
+
+.wx-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: oklch(1 0 0 / 0.3);
+}
+
+.wx-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border-radius: 999px;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.4);
+}
+
+.wx-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.4);
+}
+
+.wx-slider:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+/*
+ * Stagger delays as nth-child rules rather than an inline custom property, so
+ * panels get the effect without every one of them threading an index prop
+ * through. Ten covers the longest tab; anything past it enters with the tenth.
+ */
+.wx-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.wx-stagger > *:nth-child(2) { animation-delay: 40ms; }
+.wx-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.wx-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.wx-stagger > *:nth-child(5) { animation-delay: 160ms; }
+.wx-stagger > *:nth-child(6) { animation-delay: 200ms; }
+.wx-stagger > *:nth-child(7) { animation-delay: 240ms; }
+.wx-stagger > *:nth-child(8) { animation-delay: 280ms; }
+.wx-stagger > *:nth-child(n + 9) { animation-delay: 320ms; }
+
+/* The tab panel itself is the stagger root, so its own children animate. */
+.wx-stagger > * > * { animation: none; }
+
+.wx-display { font-family: var(--wx-font-display); letter-spacing: -0.015em; }
+
+/* The tile graphics shrink with the tile so the text keeps its column. */
+@media (max-width: 420px) {
+  .wx-tile-visual svg { width: 44px; height: 44px; }
+  .wx-tile-visual > div { width: 52px !important; }
 }

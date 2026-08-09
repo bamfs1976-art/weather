@@ -54,6 +54,8 @@ export function SeriesChart({
    */
   const hostRef = useRef<HTMLElement>(null);
   const [width, setWidth] = useState(1000);
+  /** Column under the pointer or keyboard focus, for the tooltip card. */
+  const [hover, setHover] = useState<number | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -99,6 +101,30 @@ export function SeriesChart({
    */
   if (min < 0 && all.every((v) => v >= 0)) min = 0;
 
+  /** One row per series, used by both the card and the hit area's aria-label. */
+  function tooltipRows(i: number): { label: string; value: string; color: string }[] {
+    const rows = series.map((s) => ({
+      label: s.label,
+      color: s.color,
+      value: s.values[i] === null ? "—" : (s.format ?? yFormat)(s.values[i] as number),
+    }));
+    if (bars) {
+      rows.push({
+        label: bars.label,
+        color: bars.color,
+        value:
+          bars.values[i] === null
+            ? "—"
+            : (bars.format ?? ((v: number) => v.toFixed(1)))(bars.values[i] as number),
+      });
+    }
+    return rows;
+  }
+
+  function tooltipText(i: number, label: string): string {
+    return [label, ...tooltipRows(i).map((r) => `${r.label}: ${r.value}`)].join(", ");
+  }
+
   const x = (i: number) => padL + (count === 1 ? plotW / 2 : (i / (count - 1)) * plotW);
   const y = (v: number) => padT + plotH - ((v - min) / (max - min)) * plotH;
 
@@ -141,7 +167,7 @@ export function SeriesChart({
   }
 
   return (
-    <figure className="m-0" ref={hostRef}>
+    <figure className="wx-chart m-0" ref={hostRef}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         width={width}
@@ -240,7 +266,35 @@ export function SeriesChart({
           ) : null
         )}
 
-        {/* hover columns */}
+        {/* hover guide + markers */}
+        {hover !== null && (
+          <g aria-hidden pointerEvents="none">
+            <line
+              x1={x(hover)}
+              x2={x(hover)}
+              y1={padT}
+              y2={padT + plotH}
+              stroke="var(--wx-border-strong)"
+              strokeWidth="1"
+            />
+            {series.map((s, si) => {
+              const value = s.values[hover];
+              return value === null ? null : (
+                <circle
+                  key={`d${si}`}
+                  cx={x(hover)}
+                  cy={y(value)}
+                  r="3.5"
+                  fill="var(--wx-surface-strong)"
+                  stroke={s.color}
+                  strokeWidth="2"
+                />
+              );
+            })}
+          </g>
+        )}
+
+        {/* hit areas: one per column, focusable so the values are keyboard reachable */}
         {labels.map((label, i) => (
           <rect
             key={`h${i}`}
@@ -249,33 +303,39 @@ export function SeriesChart({
             width={plotW / Math.max(count, 1)}
             height={plotH}
             fill="transparent"
-            className="hover:fill-[var(--wx-hover)]"
-          >
-            <title>
-              {[
-                label,
-                ...series.map((s) => {
-                  const value = s.values[i];
-                  return `${s.label}: ${
-                    value === null ? "—" : (s.format ?? yFormat)(value)
-                  }`;
-                }),
-                bars
-                  ? `${bars.label}: ${
-                      bars.values[i] === null
-                        ? "—"
-                        : (bars.format ?? ((v: number) => v.toFixed(1)))(
-                            bars.values[i] as number
-                          )
-                    }`
-                  : null,
-              ]
-                .filter(Boolean)
-                .join("\n")}
-            </title>
-          </rect>
+            tabIndex={0}
+            role="button"
+            aria-label={tooltipText(i, label)}
+            onMouseEnter={() => setHover(i)}
+            onMouseLeave={() => setHover((h) => (h === i ? null : h))}
+            onFocus={() => setHover(i)}
+            onBlur={() => setHover((h) => (h === i ? null : h))}
+          />
         ))}
       </svg>
+
+      {hover !== null && (
+        <div
+          className="wx-chart-tip"
+          style={{
+            left: `${(x(hover) / width) * 100}%`,
+            /* Flip to the other side near the right edge so the card never
+               hangs off the container and forces the page to scroll. */
+            transform:
+              x(hover) > width * 0.6 ? "translate(-100%, 0)" : "translate(0, 0)",
+          }}
+          role="status"
+        >
+          <div className="wx-chart-tip-title">{labels[hover]}</div>
+          {tooltipRows(hover).map((row) => (
+            <div key={row.label} className="wx-chart-tip-row">
+              <span className="wx-chart-tip-swatch" style={{ background: row.color }} />
+              <span className="wx-chart-tip-label">{row.label}</span>
+              <span className="wx-chart-tip-value wx-num">{row.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <figcaption className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
         {series.map((s, si) => (

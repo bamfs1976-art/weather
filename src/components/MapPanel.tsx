@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, Chip, Notice } from "./ui";
+import { PauseIcon, PlayIcon } from "./icons";
 import type { ResolvedPlace, ThemeName } from "@/lib/weather-types";
 /*
  * The weather layers split into two kinds, and conflating them was a bug:
@@ -26,6 +27,8 @@ import { WEATHER_OVERLAYS as OVERLAYS, WEATHER_VIEWS as VIEWS } from "@/lib/map-
  * old cached bundle — a distinction that cost several rounds of blind fixes.
  */
 const BUILD_REF = (process.env.NEXT_PUBLIC_BUILD_REF ?? "").slice(0, 7);
+
+const NOW_INDEX = 4;
 
 const OFFSETS = [
   { id: "-60minutes", label: "-60m" },
@@ -268,7 +271,7 @@ export function MapPanel({
               </Notice>
             </div>
           )}
-          <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap gap-1">
+          <div className="pointer-events-none absolute right-2 top-2 flex flex-wrap justify-end gap-1">
             <Chip tone="accent">{OFFSETS[offsetIndex].label}</Chip>
             {droppedLayers.length > 0 && (
               <Chip tone="warn" title="Xweather would not render these layers, so they were dropped">
@@ -276,6 +279,46 @@ export function MapPanel({
               </Chip>
             )}
           </div>
+        <div className="wx-map-controls">
+          <button
+            type="button"
+            className="wx-map-play"
+            onClick={() => setPlaying((p) => !p)}
+            aria-label={playing ? "Pause animation" : "Play animation"}
+          >
+            {playing ? <PauseIcon size={18} /> : <PlayIcon size={18} />}
+          </button>
+          <div className="min-w-0 flex-1">
+            <label htmlFor="wx-map-time" className="sr-only">
+              Map time offset
+            </label>
+            <input
+              id="wx-map-time"
+              type="range"
+              className="wx-slider"
+              min={0}
+              max={OFFSETS.length - 1}
+              step={1}
+              value={offsetIndex}
+              onChange={(event) => {
+                setPlaying(false);
+                setOffsetIndex(Number(event.target.value));
+              }}
+              aria-valuetext={OFFSETS[offsetIndex].label}
+            />
+            <div className="wx-map-ticks" aria-hidden>
+              {OFFSETS.map((offset, index) => (
+                <span
+                  key={offset.id}
+                  className={index === NOW_INDEX ? "is-now" : undefined}
+                >
+                  {index === NOW_INDEX ? "Now" : ""}
+                </span>
+              ))}
+            </div>
+          </div>
+          <span className="wx-map-time-label wx-num">{OFFSETS[offsetIndex].label}</span>
+        </div>
         </div>
 
         {/*
@@ -289,32 +332,12 @@ export function MapPanel({
           {BUILD_REF ? ` · build ${BUILD_REF}` : ""}
         </p>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className={`wx-btn text-sm ${playing ? "wx-btn-active" : ""}`}
-            onClick={() => setPlaying((p) => !p)}
-          >
-            {playing ? "⏸ Pause" : "▶ Animate"}
-          </button>
-          <div className="wx-scroll flex gap-1">
-            {OFFSETS.map((offset, index) => (
-              <button
-                key={offset.id}
-                type="button"
-                onClick={() => {
-                  setPlaying(false);
-                  setOffsetIndex(index);
-                }}
-                className={`wx-btn shrink-0 px-2.5 py-1 text-xs ${
-                  offsetIndex === index ? "wx-btn-active" : ""
-                }`}
-              >
-                {offset.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        {/*
+          Playback lives over the map as a glass panel rather than as a row of
+          buttons beneath it: the scrubber is only meaningful while looking at
+          the image, and putting it there halves the vertical space the card
+          needs on a phone.
+        */}
       </Card>
 
       <Card

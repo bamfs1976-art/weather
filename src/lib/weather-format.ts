@@ -590,3 +590,184 @@ export function nextPrecipitation(
 
   return DRY;
 }
+
+/* --------------------------- conditions --------------------------- */
+
+/**
+ * The condition vocabulary the UI draws from.
+ *
+ * Xweather reports conditions as icon file names ("pcloudyrn.png") and coded
+ * strings (":T" for thunder). Both are parsed once, here, into a small closed
+ * set — so the icon component, the hero gradient and the animated sky layer all
+ * branch on the same value instead of each re-parsing the raw name slightly
+ * differently.
+ */
+export type ConditionKind =
+  | "clear"
+  | "fair"
+  | "pcloudy"
+  | "mcloudy"
+  | "cloudy"
+  | "rain"
+  | "showers"
+  | "drizzle"
+  | "tstorm"
+  | "snow"
+  | "sleet"
+  | "hail"
+  | "fog"
+  | "wind"
+  | "hot"
+  | "cold"
+  | "unknown";
+
+export interface Condition {
+  kind: ConditionKind;
+  night: boolean;
+}
+
+export function classifyCondition(
+  icon: string | null | undefined,
+  weatherPrimaryCoded?: string | null
+): Condition {
+  const name = (icon ?? "").replace(/\.(png|svg|gif)$/i, "").toLowerCase();
+  /*
+   * Xweather marks night icons with a trailing "n" — but "rain" and several
+   * others end in n too, so test the suffix only after the words that would
+   * produce a false positive have been ruled out.
+   */
+  const night = /n$/.test(name) && !/(rain|in|sn|wn)$/.test(name);
+  const coded = (weatherPrimaryCoded ?? "").toUpperCase();
+
+  const kind = ((): ConditionKind => {
+    /*
+     * Prefer weatherPrimaryCoded. It is the authoritative field —
+     * "coverage:intensity:weather", e.g. "::RW" for rain showers — whereas the
+     * icon file name has to be pattern-matched and gets it wrong: "pcloudyr" is
+     * partly cloudy *with rain*, but contains neither "rain" nor "showers", so
+     * a substring match drew a sun behind a cloud next to the words "Light rain
+     * showers".
+     */
+    const code = coded.split(":").pop() ?? "";
+    switch (code) {
+      case "T": return "tstorm";
+      case "A": case "IP": return "hail";
+      case "RW": case "L": return "showers";
+      case "R": case "ZR": return "rain";
+      case "S": case "SW": case "BS": return "snow";
+      case "RS": case "WM": return "sleet";
+      case "BR": case "F": case "H": case "K": case "FR": return "fog";
+      case "BD": case "BN": case "BY": return "wind";
+      case "CL": return "clear";
+      case "FW": return "fair";
+      case "SC": return "pcloudy";
+      case "BK": return "mcloudy";
+      case "OV": return "cloudy";
+      default: break;
+    }
+    if (coded.includes(":T")) return "tstorm";
+    if (coded.includes(":A")) return "hail";
+    if (!name || name === "na") return "unknown";
+    /*
+     * Falling back to the icon name: Xweather appends a precipitation letter to
+     * the cloud state, so check those suffixes before the cloud words or every
+     * wet variant reads as merely cloudy.
+     */
+    if (/(cloudy|fair|clear)t$/.test(name)) return "tstorm";
+    if (/(cloudy|fair|clear)sn?$/.test(name)) return "snow";
+    if (/(cloudy|fair|clear)r$/.test(name)) return "showers";
+    if (name.includes("tstorm") || name.includes("thunder")) return "tstorm";
+    if (name.includes("blizzard")) return "snow";
+    if (name.includes("snowshowers") || name.includes("flurries")) return "snow";
+    if (
+      name.includes("snowtorain") ||
+      name.includes("raintosnow") ||
+      name.includes("wintrymix") ||
+      name.includes("rainandsnow")
+    ) {
+      return "sleet";
+    }
+    if (name.includes("sleet") || name.includes("freezingrain")) return "sleet";
+    if (name.includes("snow")) return "snow";
+    if (name.includes("drizzle")) return "drizzle";
+    if (name.includes("showers")) return "showers";
+    if (name.includes("rain")) return "rain";
+    if (
+      name.includes("fog") ||
+      name.includes("hazy") ||
+      name.includes("haze") ||
+      name.includes("smoke")
+    ) {
+      return "fog";
+    }
+    if (name.includes("dust") || name.includes("sand")) return "wind";
+    if (name.includes("wind")) return "wind";
+    if (name.includes("cold")) return "cold";
+    if (name.includes("hot")) return "hot";
+    if (name.includes("mcloudy")) return "mcloudy";
+    if (name.includes("pcloudy")) return "pcloudy";
+    if (name.includes("cloudy")) return "cloudy";
+    if (name.includes("fair")) return "fair";
+    if (name.includes("clear") || name.includes("sunny")) return "clear";
+    return "unknown";
+  })();
+
+  return { kind, night };
+}
+
+/** CSS custom property naming the sky gradient for a condition. */
+export function skyToken({ kind, night }: Condition): string {
+  switch (kind) {
+    case "tstorm":
+      return "--sky-storm";
+    case "rain":
+    case "showers":
+    case "drizzle":
+      return "--sky-rain";
+    case "snow":
+    case "sleet":
+    case "hail":
+      return "--sky-snow";
+    case "fog":
+      return "--sky-fog";
+    case "cloudy":
+    case "mcloudy":
+      return "--sky-cloud";
+    case "pcloudy":
+      return night ? "--sky-clear-night" : "--sky-cloud";
+    case "clear":
+    case "fair":
+    case "hot":
+      return night ? "--sky-clear-night" : "--sky-clear-day";
+    case "cold":
+    case "wind":
+    case "unknown":
+    default:
+      return night ? "--sky-clear-night" : "--sky-cloud";
+  }
+}
+
+/** Which animated overlay suits a condition: drifting cloud, rain, or glow. */
+export function skyMotion({ kind, night }: Condition): "cloud" | "rain" | "glow" | "none" {
+  switch (kind) {
+    case "rain":
+    case "showers":
+    case "drizzle":
+    case "tstorm":
+    case "snow":
+    case "sleet":
+    case "hail":
+      return "rain";
+    case "cloudy":
+    case "mcloudy":
+    case "pcloudy":
+    case "fog":
+      return "cloud";
+    case "clear":
+    case "fair":
+    case "hot":
+      return night ? "none" : "glow";
+    default:
+      return "none";
+  }
+}
