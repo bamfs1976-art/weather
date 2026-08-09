@@ -130,11 +130,31 @@ export async function GET(request: NextRequest) {
     ...WEATHER_OVERLAYS.map((option) => option.id),
   ];
 
-  const maps = point
-    ? await Promise.all(
-        MAP_LAYERS.map((layer) => probeMapLayer(layer, point.lat, point.lon))
-      )
-    : [];
+  /*
+   * Six at a time, not all thirty-seven.
+   *
+   * A different layer has timed out on each of the last two runs — maritime-sst
+   * once, wind-dir the next — while every other layer passed and the stack
+   * probes that use those same layers all succeeded. That pattern is the probe
+   * saturating the maps host, not a layer being unavailable, and a report that
+   * invents its own failures is worse than no report.
+   *
+   * This does not touch the Environment Agency timeouts: the phases here are
+   * already sequential, so the raster probes run after the water calls have
+   * finished and cannot have starved them.
+   */
+  const maps: Awaited<ReturnType<typeof probeMapLayer>>[] = [];
+  if (point) {
+    for (let i = 0; i < MAP_LAYERS.length; i += 6) {
+      maps.push(
+        ...(await Promise.all(
+          MAP_LAYERS.slice(i, i + 6).map((layer) =>
+            probeMapLayer(layer, point.lat, point.lon)
+          )
+        ))
+      );
+    }
+  }
 
   /*
    * The stacks the map panel actually requests, fingerprinted. The per-layer
@@ -229,6 +249,9 @@ export async function GET(request: NextRequest) {
      */
     productSlug: request.nextUrl.searchParams.get("product"),
     productVersion: request.nextUrl.searchParams.get("version"),
+    // Land observations addresses a location by six-character geohash, so the
+    // probe needs the resolved point rather than a fixed resource name.
+    point,
   });
 
   const all = [...results, ...water];

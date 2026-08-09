@@ -19,6 +19,8 @@
  * product stops at its first success and diagnostics is the only caller.
  */
 
+import { encodeGeohash } from "./geohash";
+
 const HOST =
   process.env.METOFFICE_MAP_BASE_URL ?? "https://data.hub.api.metoffice.gov.uk";
 
@@ -65,6 +67,28 @@ function apiExists(body: string): boolean {
 }
 
 /**
+ * Both of the gateway's 404s are JSON `"type": "Status report"` envelopes, and
+ * nothing else it fronts speaks that way. So anything that is *not* one is the
+ * product itself replying — which makes even a rejection proof of existence.
+ *
+ * This is not hypothetical tidiness. Land observations answered
+ * `400 text/plain: "geohash must be exactly 6 chars"`, and the probe threw it
+ * away because it only recognised 2xx and the resource-not-matched 404. That
+ * response was the whole answer: the product was there, and it had just named
+ * the shape of its own request path.
+ */
+function gatewayEnvelope(body: string): boolean {
+  return /"type"\s*:\s*"Status report"/i.test(body);
+}
+
+function productAnswered(got: Fetched): boolean {
+  if (got.status === null) return false;
+  if (got.status < 400) return true;
+  if (apiExists(got.body)) return true;
+  return got.body.trim().length > 0 && !gatewayEnvelope(got.body);
+}
+
+/**
  * Candidate entry points per product, most likely first.
  *
  * DataHub's one known path is `/sitespecific/v0/point/hourly`, so the shape is
@@ -102,22 +126,18 @@ const PRODUCTS: Product[] = [
      */
     // The other spellings are gone: they cost quota to re-disprove, and the
     // slug is no longer in doubt.
-    versions: ["1", "1.0.0"],
+    versions: ["1"],
     slugs: ["observation-land"],
     whenMissing:
-      "the slug came from the DataHub product page, so this is not a spelling problem — check METOFFICE_OBS_API_KEY belongs to the Land Observations subscription rather than to one of the other three products.",
-    // "" probes the base itself, in case it lists its own resources.
-    resources: [
-      "",
-      "sites",
-      "collections",
-      "observations",
-      "latest",
-      "hourly",
-      "point/hourly",
-      "all/latest",
-      "capabilities",
-    ],
+      "the slug came from the DataHub product page and the API has answered on it before, so this is not a spelling problem — check METOFFICE_OBS_API_KEY belongs to the Land Observations subscription rather than to one of the other three products.",
+    /*
+     * The API named its own path shape when it rejected a nonsense resource
+     * with "geohash must be exactly 6 chars" — the segment below the version is
+     * a location, not an endpoint name. `{geohash}` is substituted with the
+     * requested point; the fallbacks stay only in case the geohash form needs a
+     * suffix.
+     */
+    resources: ["{geohash}", "{geohash}/latest", "{geohash}/hourly"],
   },
   {
     id: "atmospheric",
@@ -152,6 +172,8 @@ export interface ProductDiscovery {
   endpoint: string | null;
   items: string[] | null;
   tileTemplate: string | null;
+  /** The start of a successful response, so the client is written from it. */
+  sample?: string | null;
   verdict: string;
   attempts: DiscoveryAttempt[];
 }
@@ -175,7 +197,11 @@ function templateFromXml(xml: string): string | null {
 function itemsFromJson(parsed: unknown): string[] {
   const pick = (entry: unknown): string => {
     if (entry && typeof entry === "object") {
-      const record = entry as Record<string, unknown>;
+      let record = entry as Record<string, unknown>;
+      // GeoJSON keeps the readable fields one level down, under `properties`.
+      if (record.properties && typeof record.properties === "object") {
+        record = { ...record, ...(record.properties as Record<string, unknown>) };
+      }
       for (const field of ["name", "id", "identifier", "siteId", "orderId", "title"]) {
         if (typeof record[field] === "string") return record[field] as string;
       }
@@ -236,7 +262,10 @@ function describe(url: string, got: Fetched): DiscoveryAttempt {
   };
 }
 
-async function probe(product: Product): Promise<ProductDiscovery> {
+async function probe(
+  product: Product,
+  point: { lat: number; lon: number } | null
+): Promise<ProductDiscovery> {
   // Fall back to the site-specific key: several DataHub plans issue one key for
   // everything, and trying it is cheaper than reporting "not configured" wrongly.
   const key = process.env[product.keyEnv] ?? process.env.METOFFICE_API_KEY;
@@ -271,7 +300,7 @@ async function probe(product: Product): Promise<ProductDiscovery> {
           verdict: `${candidate}/${version} exists but rejected the key — check it matches this product's subscription`,
         };
       }
-      if (apiExists(got.body) || (got.status !== null && got.status < 400)) {
+      if (productAnswered(got)) {
         found = { slug: candidate, version };
         break outer;
       }
@@ -284,7 +313,7 @@ async function probe(product: Product): Promise<ProductDiscovery> {
       const bare = `${HOST}/${candidate}/${version}`;
       const root = await get(bare, key);
       base.attempts.push(describe(bare, root));
-      if (root.status !== null && root.status < 400) {
+      if (productAnswered(root)) {
         found = { slug: candidate, version };
         break outer;
       }
@@ -305,13 +334,26 @@ async function probe(product: Product): Promise<ProductDiscovery> {
 
   /* Pass two: the resource, under the slug and version now known to exist. */
   const root = `${HOST}/${slug}/${version}`;
-  for (const resource of product.resources) {
+  const geohash = point ? encodeGeohash(point.lat, point.lon, 6) : null;
+
+  for (const template of product.resources) {
+    // A resource naming {geohash} needs a location; without one there is
+    // nothing to ask about, so skip rather than send a literal placeholder.
+    if (template.includes("{geohash}") && !geohash) continue;
+    const resource = geohash ? template.replaceAll("{geohash}", geohash) : template;
+
     // An empty resource means the base itself, without a trailing slash: some
     // gateways answer there with a listing and 404 on `.../1/`.
     const url = resource ? `${root}/${resource}` : root;
     const got = await get(url, key);
     if (got.status !== null && got.status >= 200 && got.status < 300) {
       const attempt = describe(url, got);
+      /*
+       * Keep a generous sample on success. The identifiers alone do not say
+       * what a field is called or what units it is in, and writing the client
+       * from a shape nobody has looked at is how the map went down.
+       */
+      attempt.sample = got.body.slice(0, 1_500);
       if (/xml/i.test(got.contentType ?? "") || got.body.trimStart().startsWith("<")) {
         attempt.items = itemsFromXml(got.body);
         attempt.tileTemplate = templateFromXml(got.body);
@@ -329,6 +371,7 @@ async function probe(product: Product): Promise<ProductDiscovery> {
         endpoint: url,
         items: attempt.items ?? null,
         tileTemplate: attempt.tileTemplate ?? null,
+        sample: attempt.sample ?? null,
         verdict: "found — build the client from the identifiers above",
       };
     }
@@ -373,6 +416,8 @@ export async function discoverDataHub(options?: {
   productSlug?: string | null;
   /** Version segment to try first, since not every product is at 1.0.0. */
   productVersion?: string | null;
+  /** Where to ask about — land observations addresses locations by geohash. */
+  point?: { lat: number; lon: number } | null;
 }): Promise<ProductDiscovery[]> {
   const extraSlug = parseOverride(options?.productSlug);
   const extraVersion = overrideVersion(options?.productVersion);
@@ -386,5 +431,5 @@ export async function discoverDataHub(options?: {
     };
   });
 
-  return Promise.all(products.map(probe));
+  return Promise.all(products.map((product) => probe(product, options?.point ?? null)));
 }

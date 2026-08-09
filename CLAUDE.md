@@ -154,14 +154,24 @@ nowcast, no radar rasters and no archive, which is most of what this app does.
 - **Land observations is the one worth having** — real hourly measurements from
   ~150 stations for the past 48 hours, free at 360 calls a day, and the only
   source here that is a measurement rather than a model. Its product slug is
-  at **`/observation-land/1`** — noun order inverted against the product's own
-  name, the docs URL and every spelling tried, and a bare `1` where the other
-  three products use `1.0.0`. Twelve probes missed it and no thirteenth would
-  have found it; it came off the DataHub product page. If a future product goes
-  missing, `/api/diagnostics?product=<slug>&version=` tries one from the browser
-  with no redeploy. That value reaches a fetch carrying the API key, so it is
-  validated against `[a-z0-9-]{1,64}` and the URL is always rebuilt against HOST
-  — never interpolated raw.
+  at **`/observation-land/1/{geohash}`** — noun order inverted against the
+  product's own name, the docs URL and every spelling tried; a bare `1` where
+  the other three products use `1.0.0`; and a **six-character geohash** where
+  the others take a resource name. None of the three was reachable by
+  inference. If a future product goes missing,
+  `/api/diagnostics?product=<slug>&version=` tries one from the browser with no
+  redeploy. That value reaches a fetch carrying the API key, so it is validated
+  against `[a-z0-9-]{1,64}` and the URL is always rebuilt against HOST — never
+  interpolated raw.
+- **A 4xx is not always a miss.** Both gateway 404s are JSON
+  `"type": "Status report"` envelopes; anything else is the product itself
+  replying, so even a rejection proves it exists. Land observations answered
+  `400 text/plain: "geohash must be exactly 6 chars"` and the probe discarded
+  it, because it only recognised 2xx and the resource-not-matched 404 — that
+  one response was the entire answer, and it named the request shape.
+- **`lib/geohash.ts` encodes WGS84 to geohash** for that path. Checked against
+  the canonical worked example and by round-tripping six points through an
+  independent decoder; keep those passing if you touch it.
 - **The version segment is not always `1.0.0`.** Site-specific lives at
   `/sitespecific/v0/point/hourly`, so a slug that returns product-not-found
   under one version has not been ruled out until the others are tried; pass one
