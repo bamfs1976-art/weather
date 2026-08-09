@@ -94,16 +94,27 @@ function str(value: unknown): string | null {
 async function getJSON<T>(
   url: string,
   revalidate: number,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  timeoutMs = 8_000
 ): Promise<Section<T>> {
   let res: Response;
   try {
     res = await fetch(url, {
       next: { revalidate },
-      headers: { Accept: "application/json", ...headers },
+      headers: {
+        Accept: "application/json",
+        /*
+         * Defra's linked-data platform returns 403 to requests with no
+         * User-Agent, which is what every bathing water URL did in production
+         * while flood-monitoring — a different service on the same host —
+         * answered fine. Serverless fetch sends none by default.
+         */
+        "User-Agent": "swanseaweather/1.0 (+https://swanseaweather.netlify.app)",
+        ...headers,
+      },
       // Cap each upstream so one slow service can't run the serverless
       // function out of time and take the whole payload down with it.
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
     if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
@@ -474,23 +485,38 @@ export async function getTideGauge(
    * URL shapes has cost this project a lot of rounds. `via` records which form
    * worked so diagnostics can report it rather than leaving it a mystery.
    */
-  const since = new Date(Date.now() - 48 * 3600_000).toISOString().slice(0, 19) + "Z";
+  /*
+   * 24 hours rather than 48, and 100 rows rather than 250. The wider query
+   * timed out in production: two tidal cycles is all the turning-point finder
+   * needs, and asking the Environment Agency for a quarter of the rows is the
+   * difference between answering and not.
+   */
+  const since = new Date(Date.now() - 26 * 3600_000).toISOString().slice(0, 19) + "Z";
   const station = `${EA_BASE}/id/stations/${encodeURIComponent(notation)}`;
   const attempts: { via: string; url: string }[] = [
-    { via: "since+sorted", url: `${station}/readings?since=${encodeURIComponent(since)}&_sorted&_limit=250` },
-    { via: "sorted", url: `${station}/readings?_sorted&_limit=250` },
-    { via: "measures", url: `${EA_BASE}/data/readings?since=${encodeURIComponent(since)}&stationReference=${encodeURIComponent(notation)}&_sorted&_limit=250` },
+    { via: "since+sorted", url: `${station}/readings?since=${encodeURIComponent(since)}&_sorted&_limit=120` },
+    { via: "sorted", url: `${station}/readings?_sorted&_limit=120` },
     { via: "latest", url: `${station}/readings?latest` },
   ];
 
   let readings: TideReading[] = [];
   let via: string | null = null;
   let lastError: Section<TideGauge> | null = null;
+  /*
+   * One deadline across every attempt. Netlify gives a synchronous function ten
+   * seconds total, so three tries at eight seconds each would take the whole
+   * payload down rather than degrading this one card.
+   */
+  const deadline = Date.now() + 6_500;
 
   for (const attempt of attempts) {
+    const remaining = deadline - Date.now();
+    if (remaining < 1_200) break;
     const section = await getJSON<{ items?: RawReading | RawReading[] }>(
       attempt.url,
-      TTL.readings
+      TTL.readings,
+      {},
+      remaining
     );
     if (!section.ok || !section.data) {
       lastError = { ok: false, data: null, error: section.error, code: section.code };
