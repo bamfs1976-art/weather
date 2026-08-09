@@ -262,25 +262,7 @@ export async function GET(request: NextRequest) {
    * so this asks each service where it lives rather than guessing a URL — the
    * answers are what the real clients get written against.
    */
-  const metofficeProducts = await discoverDataHub({
-    /*
-     * `?product=` and `?version=` let a slug read off the DataHub product page
-     * be tried from the browser, without a code change and a redeploy per
-     * guess. Land observations is the one still unresolved.
-     */
-    productSlug: request.nextUrl.searchParams.get("product"),
-    productVersion: request.nextUrl.searchParams.get("version"),
-    // Land observations addresses a location by six-character geohash, so the
-    // probe needs the resolved point rather than a fixed resource name.
-    point,
-    /*
-     * `?geohash=` overrides that, so a working example from the DataHub docs
-     * settles what the API considers a valid cell — the point's own cell
-     * answered "Not Found", and guessing station coordinates to find one that
-     * does is exactly the move that has gone badly here before.
-     */
-    geohash: request.nextUrl.searchParams.get("geohash"),
-  });
+  const metofficeProducts = await discoverDataHub();
 
   const all = [...results, ...water];
 

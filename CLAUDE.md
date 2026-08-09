@@ -62,7 +62,7 @@ src/
 | `XWEATHER_CLIENT_SECRET` | Xweather application secret |
 | `METOFFICE_API_KEY` | Optional. Met Office DataHub site-specific, for the Second opinion card |
 | `METOFFICE_MAP_API_KEY` | Optional. DataHub map-images — separate subscription, 1000 images/day |
-| `METOFFICE_OBS_API_KEY` | Optional. DataHub land observations — separate subscription, 360 calls/day |
+| `METOFFICE_OBS_API_KEY` | **Unused.** DataHub land observations; resolved then dropped, see below |
 | `METOFFICE_ATMO_API_KEY` | Optional. DataHub atmospheric models — see the note below before using |
 
 Copy `.env.example` to `.env`. Without them the app still renders — every route
@@ -129,10 +129,11 @@ nowcast, no radar rasters and no archive, which is most of what this app does.
   Anything more than 30 minutes apart is dropped rather than fudged.
 - Without a key the section returns `no_credentials` and the card explains how
   to switch it on, which is a setup step rather than an error.
-- **Each DataHub product is a separate subscription and key.** Four are in
-  play: site-specific (integrated), map images, land observations, atmospheric
-  models. Only site-specific has a request path that could be established from
-  outside; `lib/metoffice-discovery.ts` asks the other three where they live and
+- **Each DataHub product is a separate subscription and key.** Four are
+  subscribed: site-specific (integrated), map images, land observations
+  (dropped), atmospheric models. Only site-specific had a request path that
+  could be established from outside; `lib/metoffice-discovery.ts` asks the rest
+  where they live and
   `/api/diagnostics` reports the endpoint, identifiers and — for WMTS — the tile
   template under `metofficeProducts`. **Write each client from that answer.**
   Do not guess a path: a wrong path and an unsubscribed product both look like
@@ -151,62 +152,29 @@ nowcast, no radar rasters and no archive, which is most of what this app does.
   not radar, all three parameters already have Xweather rasters, and those
   redraw at any zoom while these do not. Both entries exist so the
   subscriptions are visible, not as a step towards using them.
-- **Land observations is worth less than this file first claimed.** It is not
-  "the only measurement rather than a model" — the Xweather `observations`,
-  `observations/summary` and `observations/archive` endpoints are already
-  integrated and already carry real station readings. It is a *second*
-  measurement source, worth adding only if a nearby Met Office station beats
-  what Xweather reports here. Its product slug is
-  at **`/observation-land/1/{geohash}`** — noun order inverted against the
-  product's own name, the docs URL and every spelling tried; a bare `1` where
-  the other three products use `1.0.0`; and a **six-character geohash** where
-  the others take a resource name. None of the three was reachable by
-  inference. If a future product goes missing,
-  `/api/diagnostics?product=<slug>&version=` tries one from the browser with no
-  redeploy. That value reaches a fetch carrying the API key, so it is validated
-  against `[a-z0-9-]{1,64}` and the URL is always rebuilt against HOST — never
-  interpolated raw.
+- **Land observations: resolved, then dropped. Do not restart it.** It lived at
+  `/observation-land/1/{6-character geohash}` — inverted noun order, a bare `1`
+  where the other products use `1.0.0`, and a geohash where they take a resource
+  name. It cost six rounds to find and is not being used, because the premise
+  was wrong: this file called it "the only measurement rather than a model", but
+  Xweather's `observations`, `observations/summary` and `observations/archive`
+  are already integrated and already carry real station readings. It was a
+  second source for something the app was not missing. `METOFFICE_OBS_API_KEY`
+  is therefore unused.
 - **A 4xx is not always a miss.** Both gateway 404s are JSON
   `"type": "Status report"` envelopes; anything else is the product itself
   replying, so even a rejection proves it exists. Land observations answered
-  `400 text/plain: "geohash must be exactly 6 chars"` and the probe discarded
-  it, because it only recognised 2xx and the resource-not-matched 404 — that
-  one response was the entire answer, and it named the request shape.
-- **`lib/geohash.ts` encodes WGS84 to geohash** for that path. Checked against
-  the canonical worked example and by round-tripping six points through an
-  independent decoder; keep those passing if you touch it.
-- **What is still unknown is which cells carry data.** The path is settled, but
-  `/observation-land/1/{the point's own cell}` answers `404 Not Found` in the
-  API's own voice. A six-character geohash is ~1.2 × 0.6 km and 150 stations
-  over 250,000 km² means a cell taken from a postcode almost never contains
-  one. Either the API wants a station's own cell, or it matches a nearest
-  station within a radius Swansea falls outside. **Do not go looking for it by
-  guessing station coordinates** — `/api/diagnostics?geohash=<6 chars>` tries a
-  working example from the docs in one request. Input is matched against
-  geohash base32 (no `a`, `i`, `l`, `o`) at exactly six characters.
-
-### Diagnostics must not invent failures
-
-Three separate false alarms have come out of this route, each of which sent a
-round of work in the wrong direction. Anything added here has to be checked
-against the possibility that the probe caused the result.
-
-- Raster layers are probed **six at a time**. Firing all thirty-seven at once
-  produced a different bogus "broken layer" on each run.
-- Environment Agency calls run **one at a time**; only the other hosts share a
-  `Promise.all`. A different EA endpoint timed out on each of three runs —
-  never the same one, never all of them — which is a throttled burst, not an
-  outage. The same burst pattern took river levels down once before.
-- `mapStacks.verdict` compares distinct images to the stacks that **answered**,
-  not to the number probed. Counting two timeouts as sameness announced that
-  the map service was serving one picture for everything, which is the alarm
-  that cost five rounds.
+  `400 text/plain: "geohash must be exactly 6 chars"` and the probe discarded it
+  because it only recognised 2xx and the resource-not-matched 404 — that one
+  response was the entire answer, and it named the request shape. That rule is
+  still in `productAnswered()` and still worth keeping.
 - **The version segment is not always `1.0.0`.** Site-specific lives at
   `/sitespecific/v0/point/hourly`, so a slug that returns product-not-found
   under one version has not been ruled out until the others are tried; pass one
   now sweeps slug × version.
-- Probing costs real quota — land observations allows 360 calls a day — so each
-  product stops at its first success and diagnostics is the only caller.
+- Probing costs real quota, so each product stops at its first success and
+  diagnostics is the only caller. Two products remain in the list and both
+  resolve on their first request.
 
 ## Other open data (no keys)
 

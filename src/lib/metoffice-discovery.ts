@@ -1,25 +1,31 @@
 /**
  * SERVER ONLY — endpoint discovery for Met Office DataHub products.
  *
- * Four DataHub products are now subscribed, each with its own key: the
- * site-specific forecast (already integrated in lib/metoffice.ts), map images,
- * land observations, and atmospheric models. Only the first has a request path
- * this machine could establish; the rest are documented behind pages the build
- * environment cannot reach.
+ * Four DataHub products are subscribed. Site-specific is integrated in
+ * lib/metoffice.ts; land observations was resolved and then dropped (see
+ * below); map images and atmospheric models are what remain here.
  *
  * This module does not integrate anything. It asks each service where it lives
- * and reports the answer through /api/diagnostics, so the clients get written
- * from a capabilities document rather than from a plausible-looking guess.
- * That distinction is not pedantry: guessing raster URLs took the Xweather map
- * down under every setting for five rounds, and the same failure here would be
- * harder to spot because a wrong path and an unsubscribed product both look
- * like "no data".
+ * and reports the answer through /api/diagnostics, so a client would get
+ * written from what the service says rather than from a plausible-looking
+ * guess. That distinction is not pedantry: guessing raster URLs took the
+ * Xweather map down under every setting for five rounds, and the same failure
+ * here would be harder to spot because a wrong path and an unsubscribed
+ * product both look like "no data".
  *
- * Probing costs real quota — land observations allows 360 calls a day — so each
- * product stops at its first success and diagnostics is the only caller.
+ * Both remaining products resolve, and neither is worth integrating — they are
+ * order-based file deliveries and the app already covers what they carry. The
+ * entries stay so the subscriptions stay visible, not as a step towards use.
+ *
+ * Land observations lived at `/observation-land/1/{6-character geohash}`, which
+ * took a slug read off the product page to find. It is gone from the list on
+ * purpose: the cell for an arbitrary postcode contains no station, and
+ * Xweather's `observations` endpoints already supply real station readings — so
+ * it was a second source for something the app was not missing. Do not add it
+ * back without a reason that survives that sentence.
+ *
+ * Each product stops at its first success, and diagnostics is the only caller.
  */
-
-import { encodeGeohash } from "./geohash";
 
 const HOST =
   process.env.METOFFICE_MAP_BASE_URL ?? "https://data.hub.api.metoffice.gov.uk";
@@ -116,50 +122,6 @@ const PRODUCTS: Product[] = [
     versions: ["1.0.0"],
     slugs: ["map-images"],
     resources: ["orders", "runs?sort=RUNDATETIME"],
-  },
-  {
-    id: "observations",
-    label: "Land observations",
-    keyEnv: "METOFFICE_OBS_API_KEY",
-    note: "Hourly readings from ~150 UK stations. Lower value than first claimed here: the Xweather `observations` endpoints are already integrated and already carry real station readings, so this is a second measurement source rather than the only one. Worth adding only if a nearby Met Office station beats what Xweather reports for this location.",
-    /*
-     * `observation-land/1`, read off the DataHub product page by the account
-     * holder. Twelve probes had missed it, and fairly: the noun order is
-     * inverted against the product's own name ("Land Observations"), the docs
-     * URL and every other spelling tried, and the version is a bare "1" rather
-     * than the "1.0.0" the other three products use. Neither half was reachable
-     * by inference — which is the whole argument for asking.
-     */
-    // The other spellings are gone: they cost quota to re-disprove, and the
-    // slug is no longer in doubt.
-    versions: ["1"],
-    slugs: ["observation-land"],
-    whenMissing:
-      "the slug came from the DataHub product page and the API has answered on it before, so this is not a spelling problem — check METOFFICE_OBS_API_KEY belongs to the Land Observations subscription rather than to one of the other three products.",
-    /*
-     * The API named its own path shape when it rejected a nonsense resource
-     * with "geohash must be exactly 6 chars" — the segment below the version is
-     * a location, not an endpoint name. `{geohash}` is substituted with the
-     * requested point; the fallbacks stay only in case the geohash form needs a
-     * suffix.
-     */
-    resources: ["{geohash}"],
-    /*
-     * `/observation-land/1/{geohash}` answered `404 text/plain: Not Found` —
-     * the API's own words, not the gateway's envelope — while `/latest` and
-     * `/hourly` below it drew the gateway's resource-not-matched. So the route
-     * is exactly this and there is nothing under it: what 404s is the *cell*.
-     *
-     * That is the open question. A six-character geohash is about 1.2 km by
-     * 0.6 km, and 150 stations over 250,000 km² means a cell picked from a
-     * postcode almost never contains one. Either the API expects the geohash of
-     * a station's own cell — which needs a site list from somewhere — or it
-     * matches the nearest station within a radius this point falls outside.
-     * `?geohash=` exists so a working example from the docs settles it in one
-     * request rather than by guessing station coordinates.
-     */
-    resourceMissing:
-      "the path is right and the cell is empty — a 6-character geohash is ~1.2 x 0.6 km and there is no station in this one. Paste a working example from the DataHub docs with /api/diagnostics?geohash=<6 chars> to see which cells carry data.",
   },
   {
     id: "atmospheric",
@@ -284,17 +246,7 @@ function describe(url: string, got: Fetched): DiscoveryAttempt {
   };
 }
 
-/* Geohash's base32 alphabet, exactly six characters — never interpolated raw. */
-function parseGeohash(raw: string | null | undefined): string | null {
-  const trimmed = raw?.trim().toLowerCase() ?? "";
-  return /^[0-9bcdefghjkmnpqrstuvwxyz]{6}$/.test(trimmed) ? trimmed : null;
-}
-
-async function probe(
-  product: Product,
-  point: { lat: number; lon: number } | null,
-  override: string | null
-): Promise<ProductDiscovery> {
+async function probe(product: Product): Promise<ProductDiscovery> {
   // Fall back to the site-specific key: several DataHub plans issue one key for
   // everything, and trying it is cheaper than reporting "not configured" wrongly.
   const key = process.env[product.keyEnv] ?? process.env.METOFFICE_API_KEY;
@@ -363,13 +315,7 @@ async function probe(
 
   /* Pass two: the resource, under the slug and version now known to exist. */
   const root = `${HOST}/${slug}/${version}`;
-  const geohash = override ?? (point ? encodeGeohash(point.lat, point.lon, 6) : null);
-
-  for (const template of product.resources) {
-    // A resource naming {geohash} needs a location; without one there is
-    // nothing to ask about, so skip rather than send a literal placeholder.
-    if (template.includes("{geohash}") && !geohash) continue;
-    const resource = geohash ? template.replaceAll("{geohash}", geohash) : template;
+  for (const resource of product.resources) {
 
     // An empty resource means the base itself, without a trailing slash: some
     // gateways answer there with a listing and 404 on `.../1/`.
@@ -416,61 +362,6 @@ async function probe(
   };
 }
 
-/**
- * A slug supplied at request time, tried ahead of the built-in candidates.
- *
- * Twelve probes have failed to find land observations, and the next guess is
- * worth less than the answer sitting on the user's DataHub product page. This
- * lets them try it straight from the browser —
- * `/api/diagnostics?p=Swansea&product=land-observations-1.0.0` — instead of
- * waiting on a code change and a redeploy to test a one-word hypothesis.
- *
- * Only `[a-z0-9-]` survives, and the URL is always rebuilt against HOST: the
- * value reaches an outbound fetch that carries the API key, so it is matched
- * against a character class rather than merely escaped.
- */
-const SEGMENT = /^[a-z0-9-]{1,64}$/;
-
-function parseOverride(raw: string | null | undefined): Product["slugs"] | null {
-  if (!raw) return null;
-  const trimmed = raw.trim().toLowerCase();
-  return SEGMENT.test(trimmed) ? [trimmed] : null;
-}
-
-export function overrideVersion(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const trimmed = raw.trim().toLowerCase();
-  return /^[a-z0-9.]{1,16}$/.test(trimmed) ? trimmed : null;
-}
-
-export async function discoverDataHub(options?: {
-  /** Product slug to try first, for the product whose slug is still unknown. */
-  productSlug?: string | null;
-  /** Version segment to try first, since not every product is at 1.0.0. */
-  productVersion?: string | null;
-  /** Where to ask about — land observations addresses locations by geohash. */
-  point?: { lat: number; lon: number } | null;
-  /**
-   * An exact geohash to use instead of the point's own, so a working example
-   * from the docs can be tried without a redeploy. Base32 only, and the same
-   * six-character length the API insists on.
-   */
-  geohash?: string | null;
-}): Promise<ProductDiscovery[]> {
-  const extraSlug = parseOverride(options?.productSlug);
-  const extraVersion = overrideVersion(options?.productVersion);
-
-  const products = PRODUCTS.map((product) => {
-    if (product.id !== "observations" || (!extraSlug && !extraVersion)) return product;
-    return {
-      ...product,
-      slugs: [...(extraSlug ?? []), ...product.slugs],
-      versions: [...(extraVersion ? [extraVersion] : []), ...product.versions],
-    };
-  });
-
-  const geohash = parseGeohash(options?.geohash);
-  return Promise.all(
-    products.map((product) => probe(product, options?.point ?? null, geohash))
-  );
+export async function discoverDataHub(): Promise<ProductDiscovery[]> {
+  return Promise.all(PRODUCTS.map(probe));
 }
