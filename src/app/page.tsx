@@ -214,10 +214,17 @@ export default function WeatherPage() {
         <Logo size={44} className="shrink-0" />
         <div>
           <p className="wx-display text-2xl font-semibold tracking-tight sm:text-3xl">
-            Weather
+            Swansea Weather
           </p>
+          {/*
+            The tagline names what the app actually carries now. "Live data from
+            the Vaisala Xweather API" stopped being true once the Met Office,
+            the Environment Agency and Open-Meteo joined it, and crediting one
+            provider for all of them is both inaccurate and unhelpful — the
+            per-card attributions do that job properly.
+          */}
           <p className="wx-muted text-xs">
-            Live data from the Vaisala Xweather API
+            Weather, tides and rivers · Swansea Bay and beyond
           </p>
         </div>
       </header>

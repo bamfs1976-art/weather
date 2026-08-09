@@ -2,14 +2,15 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Weather — powered by Vaisala Xweather",
+  title: "Swansea Weather",
   description:
     "Personal weather dashboard: current conditions, minute-by-minute nowcast, 48-hour and 10-day forecasts, the last 24 hours, historical archives, air quality and radar maps.",
-  applicationName: "Weather",
+  applicationName: "Swansea Weather",
   // Makes "Add to Home Screen" on iOS open without Safari chrome.
   appleWebApp: {
     capable: true,
-    title: "Weather",
+    // Home-screen label: short enough not to be truncated by iOS.
+    title: "Swansea Wx",
     statusBarStyle: "black-translucent",
   },
   formatDetection: { telephone: false },

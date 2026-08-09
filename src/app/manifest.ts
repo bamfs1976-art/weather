@@ -7,10 +7,10 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Weather — Vaisala Xweather",
-    short_name: "Weather",
+    name: "Swansea Weather",
+    short_name: "Swansea Wx",
     description:
-      "Current conditions, nowcast, forecasts, history, air quality and radar.",
+      "Weather, tides, rivers, air quality and radar for Swansea Bay — and anywhere else you search.",
     start_url: "/",
     display: "standalone",
     orientation: "portrait",
