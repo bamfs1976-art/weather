@@ -94,15 +94,27 @@ export async function GET(request: NextRequest) {
 
   const water = point
     ? await (async () => {
-        const [floods, rivers, marine, tides, bathing, pollen, metoffice] = await Promise.all([
-          getFloodWarnings(point.lat, point.lon, 30),
-          getRiverStations(point.lat, point.lon, 20, 2),
+        /*
+         * The Environment Agency calls go one at a time; only the other hosts
+         * are run together.
+         *
+         * A different EA endpoint has timed out on each of the last three runs
+         * — tide gauge, then floods, then stations+measures — never the same
+         * one twice, and never all of them. That is the signature of a burst
+         * being throttled, not of an endpoint being down, and it is the same
+         * failure that took river levels out when the tide fetch briefly had
+         * three fallback URLs. Firing four EA requests at once here recreates
+         * it, so diagnostics has been reporting a fault of its own making.
+         */
+        const [marine, pollen, metoffice] = await Promise.all([
           getMarineConditions(point.lat, point.lon),
-          getTideGauge(point.lat, point.lon),
-          getBathingWaters(point.lat, point.lon),
           getPollen(point.lat, point.lon),
           getMetOfficeHourly(point.lat, point.lon),
         ]);
+        const floods = await getFloodWarnings(point.lat, point.lon, 30);
+        const rivers = await getRiverStations(point.lat, point.lon, 20, 2);
+        const tides = await getTideGauge(point.lat, point.lon);
+        const bathing = await getBathingWaters(point.lat, point.lon);
         return [
           { endpoint: "EA flood-monitoring: floods", ok: floods.ok, code: floods.code, message: floods.error },
           { endpoint: "EA flood-monitoring: stations + measures", ok: rivers.ok, code: rivers.code, message: rivers.error },
@@ -187,6 +199,15 @@ export async function GET(request: NextRequest) {
 
   const hashes = mapStacks.filter((s) => s.hash).map((s) => s.hash);
   const distinctImages = new Set(hashes).size;
+  /*
+   * Sameness is judged against the stacks that actually returned an image, not
+   * against the number attempted. Two of the five timed out on the last run and
+   * the verdict compared 3 distinct hashes to 5 probes, announcing that the
+   * service was serving one picture for every stack — the exact alarm that sent
+   * five rounds after the map. Three distinct images from three answers is
+   * perfect agreement.
+   */
+  const stacksAnswered = hashes.length;
 
   /*
    * The same stacks again, but through this app's own /api/map instead of
@@ -252,6 +273,13 @@ export async function GET(request: NextRequest) {
     // Land observations addresses a location by six-character geohash, so the
     // probe needs the resolved point rather than a fixed resource name.
     point,
+    /*
+     * `?geohash=` overrides that, so a working example from the DataHub docs
+     * settles what the API considers a valid cell — the point's own cell
+     * answered "Not Found", and guessing station coordinates to find one that
+     * does is exactly the move that has gone badly here before.
+     */
+    geohash: request.nextUrl.searchParams.get("geohash"),
   });
 
   const all = [...results, ...water];
@@ -269,17 +297,22 @@ export async function GET(request: NextRequest) {
       },
       mapStacks: {
         /*
-         * Equal to the number of stacks probed when the service is behaving.
-         * Anything less means separate requests came back byte-identical.
+         * Equal to the number of stacks that answered when the service is
+         * behaving. Anything less means separate requests came back
+         * byte-identical, which is a real fault; a stack that timed out is not
+         * one, and must not be counted as sameness.
          */
         distinctImages,
+        answered: stacksAnswered,
         probed: mapStacks.length,
         verdict:
           mapStacks.length === 0
             ? "not probed"
-            : distinctImages === mapStacks.length
-              ? "service returns a different image per stack — any sameness on screen is a display fault"
-              : "service returned identical bytes for different stacks — the fault is upstream, not in the browser",
+            : stacksAnswered === 0
+              ? "no stack answered — nothing can be concluded about sameness"
+              : distinctImages === stacksAnswered
+                ? `service returns a different image per stack (${distinctImages}/${stacksAnswered} answered) — any sameness on screen is a display fault`
+                : "service returned identical bytes for different stacks — the fault is upstream, not in the browser",
         results: mapStacks,
       },
       metofficeProducts,

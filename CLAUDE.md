@@ -151,9 +151,12 @@ nowcast, no radar rasters and no archive, which is most of what this app does.
   not radar, all three parameters already have Xweather rasters, and those
   redraw at any zoom while these do not. Both entries exist so the
   subscriptions are visible, not as a step towards using them.
-- **Land observations is the one worth having** — real hourly measurements from
-  ~150 stations for the past 48 hours, free at 360 calls a day, and the only
-  source here that is a measurement rather than a model. Its product slug is
+- **Land observations is worth less than this file first claimed.** It is not
+  "the only measurement rather than a model" — the Xweather `observations`,
+  `observations/summary` and `observations/archive` endpoints are already
+  integrated and already carry real station readings. It is a *second*
+  measurement source, worth adding only if a nearby Met Office station beats
+  what Xweather reports here. Its product slug is
   at **`/observation-land/1/{geohash}`** — noun order inverted against the
   product's own name, the docs URL and every spelling tried; a bare `1` where
   the other three products use `1.0.0`; and a **six-character geohash** where
@@ -172,6 +175,32 @@ nowcast, no radar rasters and no archive, which is most of what this app does.
 - **`lib/geohash.ts` encodes WGS84 to geohash** for that path. Checked against
   the canonical worked example and by round-tripping six points through an
   independent decoder; keep those passing if you touch it.
+- **What is still unknown is which cells carry data.** The path is settled, but
+  `/observation-land/1/{the point's own cell}` answers `404 Not Found` in the
+  API's own voice. A six-character geohash is ~1.2 × 0.6 km and 150 stations
+  over 250,000 km² means a cell taken from a postcode almost never contains
+  one. Either the API wants a station's own cell, or it matches a nearest
+  station within a radius Swansea falls outside. **Do not go looking for it by
+  guessing station coordinates** — `/api/diagnostics?geohash=<6 chars>` tries a
+  working example from the docs in one request. Input is matched against
+  geohash base32 (no `a`, `i`, `l`, `o`) at exactly six characters.
+
+### Diagnostics must not invent failures
+
+Three separate false alarms have come out of this route, each of which sent a
+round of work in the wrong direction. Anything added here has to be checked
+against the possibility that the probe caused the result.
+
+- Raster layers are probed **six at a time**. Firing all thirty-seven at once
+  produced a different bogus "broken layer" on each run.
+- Environment Agency calls run **one at a time**; only the other hosts share a
+  `Promise.all`. A different EA endpoint timed out on each of three runs —
+  never the same one, never all of them — which is a throttled burst, not an
+  outage. The same burst pattern took river levels down once before.
+- `mapStacks.verdict` compares distinct images to the stacks that **answered**,
+  not to the number probed. Counting two timeouts as sameness announced that
+  the map service was serving one picture for everything, which is the alarm
+  that cost five rounds.
 - **The version segment is not always `1.0.0`.** Site-specific lives at
   `/sitespecific/v0/point/hourly`, so a slug that returns product-not-found
   under one version has not been ruled out until the others are tried; pass one

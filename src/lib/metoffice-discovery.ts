@@ -45,6 +45,12 @@ interface Product {
    * key is the thing left to check.
    */
   whenMissing?: string;
+  /**
+   * What it means when the product answered but no resource did. The generic
+   * advice ("the resource is wrong") is false once the API has replied in its
+   * own voice below the version segment.
+   */
+  resourceMissing?: string;
   /** Resources to try under whichever slug turns out to exist. */
   resources: string[];
 }
@@ -115,7 +121,7 @@ const PRODUCTS: Product[] = [
     id: "observations",
     label: "Land observations",
     keyEnv: "METOFFICE_OBS_API_KEY",
-    note: "Hourly readings from ~150 UK stations. Worth integrating — these are measurements, so they can be shown against the interpolated conditions rather than as another forecast.",
+    note: "Hourly readings from ~150 UK stations. Lower value than first claimed here: the Xweather `observations` endpoints are already integrated and already carry real station readings, so this is a second measurement source rather than the only one. Worth adding only if a nearby Met Office station beats what Xweather reports for this location.",
     /*
      * `observation-land/1`, read off the DataHub product page by the account
      * holder. Twelve probes had missed it, and fairly: the noun order is
@@ -137,7 +143,23 @@ const PRODUCTS: Product[] = [
      * requested point; the fallbacks stay only in case the geohash form needs a
      * suffix.
      */
-    resources: ["{geohash}", "{geohash}/latest", "{geohash}/hourly"],
+    resources: ["{geohash}"],
+    /*
+     * `/observation-land/1/{geohash}` answered `404 text/plain: Not Found` —
+     * the API's own words, not the gateway's envelope — while `/latest` and
+     * `/hourly` below it drew the gateway's resource-not-matched. So the route
+     * is exactly this and there is nothing under it: what 404s is the *cell*.
+     *
+     * That is the open question. A six-character geohash is about 1.2 km by
+     * 0.6 km, and 150 stations over 250,000 km² means a cell picked from a
+     * postcode almost never contains one. Either the API expects the geohash of
+     * a station's own cell — which needs a site list from somewhere — or it
+     * matches the nearest station within a radius this point falls outside.
+     * `?geohash=` exists so a working example from the docs settles it in one
+     * request rather than by guessing station coordinates.
+     */
+    resourceMissing:
+      "the path is right and the cell is empty — a 6-character geohash is ~1.2 x 0.6 km and there is no station in this one. Paste a working example from the DataHub docs with /api/diagnostics?geohash=<6 chars> to see which cells carry data.",
   },
   {
     id: "atmospheric",
@@ -262,9 +284,16 @@ function describe(url: string, got: Fetched): DiscoveryAttempt {
   };
 }
 
+/* Geohash's base32 alphabet, exactly six characters — never interpolated raw. */
+function parseGeohash(raw: string | null | undefined): string | null {
+  const trimmed = raw?.trim().toLowerCase() ?? "";
+  return /^[0-9bcdefghjkmnpqrstuvwxyz]{6}$/.test(trimmed) ? trimmed : null;
+}
+
 async function probe(
   product: Product,
-  point: { lat: number; lon: number } | null
+  point: { lat: number; lon: number } | null,
+  override: string | null
 ): Promise<ProductDiscovery> {
   // Fall back to the site-specific key: several DataHub plans issue one key for
   // everything, and trying it is cheaper than reporting "not configured" wrongly.
@@ -334,7 +363,7 @@ async function probe(
 
   /* Pass two: the resource, under the slug and version now known to exist. */
   const root = `${HOST}/${slug}/${version}`;
-  const geohash = point ? encodeGeohash(point.lat, point.lon, 6) : null;
+  const geohash = override ?? (point ? encodeGeohash(point.lat, point.lon, 6) : null);
 
   for (const template of product.resources) {
     // A resource naming {geohash} needs a location; without one there is
@@ -380,7 +409,10 @@ async function probe(
 
   return {
     ...base,
-    verdict: `product "${slug}/${version}" exists but none of the tried resources matched — the slug is right and the resource is not. Copy the exact path from the DataHub product page.`,
+    verdict:
+      `product "${slug}/${version}" exists but returned nothing usable. ` +
+      (product.resourceMissing ??
+        "The slug is right and the resource is not; copy the exact path from the DataHub product page."),
   };
 }
 
@@ -418,6 +450,12 @@ export async function discoverDataHub(options?: {
   productVersion?: string | null;
   /** Where to ask about — land observations addresses locations by geohash. */
   point?: { lat: number; lon: number } | null;
+  /**
+   * An exact geohash to use instead of the point's own, so a working example
+   * from the docs can be tried without a redeploy. Base32 only, and the same
+   * six-character length the API insists on.
+   */
+  geohash?: string | null;
 }): Promise<ProductDiscovery[]> {
   const extraSlug = parseOverride(options?.productSlug);
   const extraVersion = overrideVersion(options?.productVersion);
@@ -431,5 +469,8 @@ export async function discoverDataHub(options?: {
     };
   });
 
-  return Promise.all(products.map((product) => probe(product, options?.point ?? null)));
+  const geohash = parseGeohash(options?.geohash);
+  return Promise.all(
+    products.map((product) => probe(product, options?.point ?? null, geohash))
+  );
 }
