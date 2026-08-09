@@ -97,8 +97,9 @@ export function WaterPanel({
       <p className="wx-dim text-xs">
         River levels, tide gauges and flood warnings © Environment Agency, Open
         Government Licence — Welsh gauges in this feed are owned by Natural
-        Resources Wales, who also publish the bathing water classifications. Sea
-        state from Open-Meteo&rsquo;s 5 km European marine model.
+        Resources Wales
+        {data.sections.bathing.ok ? ", who also publish the bathing water classifications" : ""}
+        . Sea state from Open-Meteo&rsquo;s 5 km European marine model.
       </p>
     </div>
   );
@@ -560,7 +561,17 @@ function bathingTone(classification: string | null): string {
 
 function BathingBlock({ data }: { data: WaterPayload }) {
   const section = data.sections.bathing;
-  if (!section.ok && section.code === "warn_no_data") return null;
+  /*
+   * This card removes itself when the source will not serve it.
+   *
+   * Defra's linked-data platform returned 403 to every URL shape tried, with
+   * and without a User-Agent, so as far as this app is concerned the feed is
+   * simply unavailable — and an error notice that can never clear is worse than
+   * no card at all. Rendering nothing keeps the panel honest either way: if the
+   * service starts answering, the card comes back on its own with real data,
+   * and diagnostics still reports the endpoint so we would know.
+   */
+  if (!section.ok) return null;
 
   return (
     <Card

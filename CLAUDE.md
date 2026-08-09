@@ -136,7 +136,7 @@ card and nothing else. All are covered by `/api/diagnostics`.
 | Source | Used for | Notes |
 |--------|----------|-------|
 | EA flood-monitoring | flood warnings, river gauges, **tide gauges** | one API, three queries; Welsh gauges belong to NRW |
-| Defra/NRW bathing water | beach classifications | indexed by **National Grid**, not lat/long — see `lib/osgb.ts` |
+| Defra/NRW bathing water | beach classifications | **returns 403 in production**; the card hides itself, see below |
 | Open-Meteo Marine | sea state | 5 km European grid; nothing inland |
 | Open-Meteo air quality | **pollen** | 11 km CAMS; Europe only, so it returns `warn_no_data` elsewhere |
 
@@ -146,6 +146,12 @@ card and nothing else. All are covered by `/api/diagnostics`.
   (`findTurningPoints`). Predicted tide tables need an Admiralty subscription.
   The "next high water" line projects forward by the mean lunar interval and is
   labelled an estimate on the card — do not quietly promote it to a prediction.
+- **Bathing water returns 403 and the card removes itself.** Four URL shapes
+  were tried, with and without a User-Agent, and every one was refused while
+  flood-monitoring — a different service on the same host — answered normally.
+  So `BathingBlock` renders nothing when the section is not ok, rather than
+  showing a notice that can never clear. The request and the diagnostics entry
+  are both still there, so if Defra ever serves it the card reappears on its own.
 - **`lib/osgb.ts` converts WGS84 to National Grid** because the bathing water
   service offers no lat/long filter. It is checked against published control
   points (Greenwich and Ben Nevis, both to within ~10 m); keep that test passing
