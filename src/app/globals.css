@@ -616,6 +616,7 @@ body {
 .wx-tabs-wrap {
   position: sticky;
   top: 0;
+  /* Below .wx-elevated (60), above ordinary cards. */
   z-index: 30;
   margin-inline: calc(50% - 50vw);
   padding-inline: max(1rem, calc(50vw - 36rem));
@@ -1136,3 +1137,12 @@ body {
 .wx-so-icon { display: inline-flex; color: var(--wx-solar); }
 .wx-so-temp { font-size: 1.0625rem; font-weight: 600; }
 .wx-so-vs { color: var(--wx-muted); }
+
+/*
+ * Lifts a card and everything inside it above the sticky tab bar. Applied only
+ * while an overlay is open — see the note in LocationBar.
+ */
+.wx-elevated {
+  position: relative;
+  z-index: 60;
+}

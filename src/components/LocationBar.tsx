@@ -193,8 +193,20 @@ export function LocationBar({
     ? recents
     : results.map((r) => ({ query: r.query, label: r.displayName }));
 
+  /*
+   * While either overlay is open the whole card is lifted above the sticky tab
+   * bar. The popover's own z-index is not enough: the tab bar carries a
+   * backdrop-filter, which creates a stacking context, and Safari paints such
+   * an element over later content whatever its z-index says — the popover
+   * appeared sliced in half by the tab strip on iOS while looking correct in
+   * Chromium. Lifting the card as a unit sidesteps the whole question, and it
+   * is conditional so that when nothing is open the card still scrolls
+   * underneath the tab bar as it should.
+   */
+  const elevated = listOpen || settingsOpen;
+
   return (
-    <div className="wx-card p-3 sm:p-4">
+    <div className={`wx-card p-3 sm:p-4 ${elevated ? "wx-elevated" : ""}`}>
       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div ref={boxRef} className="relative min-w-0">
           <label htmlFor="wx-search" className="sr-only">
