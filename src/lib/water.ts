@@ -454,9 +454,38 @@ export async function getTideGauge(
   offsetMinutes: number | null = null,
   distKm = 60
 ): Promise<Section<TideGauge>> {
-  const stationSection = await getJSON<{ items?: RawStation | RawStation[] }>(
-    `${EA_BASE}/id/stations?type=TideGauge&lat=${lat}&long=${lon}&dist=${distKm}&_limit=10`,
-    TTL.readings
+  /*
+   * Two sequential requests, and "timeout" alone never said which one. The
+   * default budget made it worse: 8s for the station lookup plus 6s for the
+   * readings is 14s against Netlify's 10s ceiling, so a merely slow first call
+   * guaranteed the second was killed and reported as the failure. One deadline
+   * for the pair, and the stage named in the message, so the next report says
+   * where the time actually went instead of leaving it to be guessed at.
+   */
+  const started = Date.now();
+  const DEADLINE_MS = 8_000;
+  const left = () => Math.max(1_500, DEADLINE_MS - (Date.now() - started));
+  const stage = <T>(section: Section<T>, what: string, ms: number): Section<T> =>
+    section.ok
+      ? section
+      : {
+          ...section,
+          error:
+            section.code === "timeout"
+              ? `The ${what} did not respond in time (${ms} ms).`
+              : `${what}: ${section.error}`,
+        };
+
+  const t0 = Date.now();
+  const stationSection = stage(
+    await getJSON<{ items?: RawStation | RawStation[] }>(
+      `${EA_BASE}/id/stations?type=TideGauge&lat=${lat}&long=${lon}&dist=${distKm}&_limit=10`,
+      TTL.readings,
+      {},
+      4_000
+    ),
+    "tide gauge lookup",
+    Date.now() - t0
   );
   if (!stationSection.ok || !stationSection.data) {
     return { ok: false, data: null, error: stationSection.error, code: stationSection.code };
@@ -516,13 +545,23 @@ export async function getTideGauge(
    */
   const since = new Date(Date.now() - 13 * 3600_000).toISOString().slice(0, 19) + "Z";
   const station = `${EA_BASE}/id/stations/${encodeURIComponent(notation)}`;
-  const via = "since+sorted";
+  /*
+   * `_sorted` is dropped: parseReadings sorts by timestamp anyway, so asking
+   * the Environment Agency to order the rows as well buys nothing and is work
+   * it has to do before it can answer.
+   */
+  const via = "since";
 
-  const readingSection = await getJSON<{ items?: RawReading | RawReading[] }>(
-    `${station}/readings?since=${encodeURIComponent(since)}&_sorted&_limit=60`,
-    TTL.readings,
-    {},
-    6_000
+  const t1 = Date.now();
+  const readingSection = stage(
+    await getJSON<{ items?: RawReading | RawReading[] }>(
+      `${station}/readings?since=${encodeURIComponent(since)}&_limit=60`,
+      TTL.readings,
+      {},
+      left()
+    ),
+    "tide readings query",
+    Date.now() - t1
   );
 
   const readings = readingSection.ok && readingSection.data

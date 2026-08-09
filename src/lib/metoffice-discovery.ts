@@ -22,14 +22,19 @@
 const HOST =
   process.env.METOFFICE_MAP_BASE_URL ?? "https://data.hub.api.metoffice.gov.uk";
 
-const WMTS = "?service=WMTS&request=GetCapabilities&version=1.0.0";
-
 interface Product {
   id: string;
   label: string;
   keyEnv: string;
   /** What the product is for, and whether it is worth integrating. */
   note: string;
+  /**
+   * Version segments to try. Not always "1.0.0": the one DataHub path this
+   * codebase knows works is `/sitespecific/v0/point/hourly`, so a product that
+   * answers product-not-found under 1.0.0 has not been ruled out until v0 has
+   * been tried too.
+   */
+  versions: string[];
   /** Product slugs to test for existence, most likely first. */
   slugs: string[];
   /** Resources to try under whichever slug turns out to exist. */
@@ -66,29 +71,25 @@ const PRODUCTS: Product[] = [
     id: "map-images",
     label: "Map images",
     keyEnv: "METOFFICE_MAP_API_KEY",
-    note: "UK radar and model rasters. Worth integrating — the Met Office radar over Wales is finer than the global mosaic currently shown.",
-    // map-images/1.0.0 is confirmed to exist: it answers with the
-    // resource-not-matched 404 rather than the product-not-found one.
-    slugs: ["map-images", "map-image", "maps"],
-    resources: [
-      "collections",
-      "capabilities",
-      "products",
-      "images",
-      "tiles",
-      "layers",
-      "wmts/1.0.0/WMTSCapabilities.xml",
-      `wmts${WMTS}`,
-      `?service=WMTS&request=GetCapabilities&version=1.0.0`,
-    ],
+    note: "Fixed-resolution PNGs of the Global 10 km model (precipitation rate, surface temperature, MSLP), rendered against an order defined in the DataHub portal. Not worth integrating: it is not radar, the three parameters are already covered by Xweather rasters, and those redraw at any zoom while these do not.",
+    // Confirmed from the Met Office's own map_images_download utility rather
+    // than inferred: the product is order-based like atmospheric models, which
+    // is why every collection/layer/WMTS-shaped guess returned the
+    // resource-not-matched 404 under a slug that was right all along.
+    // https://github.com/MetOffice/weather_datahub_utilities
+    versions: ["1.0.0"],
+    slugs: ["map-images"],
+    resources: ["orders", "runs?sort=RUNDATETIME"],
   },
   {
     id: "observations",
     label: "Land observations",
     keyEnv: "METOFFICE_OBS_API_KEY",
     note: "Hourly readings from ~150 UK stations. Worth integrating — these are measurements, so they can be shown against the interpolated conditions rather than as another forecast.",
-    // Every "observations" spelling tried so far returned product-not-found,
-    // so the slug is the unknown here rather than the resource.
+    // Six spellings returned product-not-found under 1.0.0, which rules out the
+    // slugs only for that version. Site-specific lives at v0, so both are tried
+    // before concluding anything.
+    versions: ["1.0.0", "v0"],
     slugs: [
       "land-observations",
       "observations",
@@ -104,6 +105,7 @@ const PRODUCTS: Product[] = [
     label: "Atmospheric models",
     keyEnv: "METOFFICE_ATMO_API_KEY",
     note: "Gridded model output as GRIB2, delivered against orders placed in the portal. Poor fit for this app: the files are hundreds of megabytes and GRIB2 needs decoding a serverless function cannot sensibly do.",
+    versions: ["1.0.0"],
     slugs: ["atmospheric-models"],
     resources: ["orders", "collections"],
   },
@@ -238,34 +240,37 @@ async function probe(product: Product): Promise<ProductDiscovery> {
    * requested under each, because the gateway's two different 404s answer that
    * question without needing to know any real path.
    */
-  let slug: string | null = null;
-  for (const candidate of product.slugs) {
-    const url = `${HOST}/${candidate}/1.0.0/__probe`;
-    const got = await get(url, key);
-    base.attempts.push(describe(url, got));
-    if (got.status === 401 || got.status === 403) {
-      return {
-        ...base,
-        verdict: `${candidate} exists but rejected the key — check it matches this product's subscription`,
-      };
-    }
-    if (apiExists(got.body) || (got.status !== null && got.status < 400)) {
-      slug = candidate;
-      break;
+  let found: { slug: string; version: string } | null = null;
+  outer: for (const candidate of product.slugs) {
+    for (const version of product.versions) {
+      const url = `${HOST}/${candidate}/${version}/__probe`;
+      const got = await get(url, key);
+      base.attempts.push(describe(url, got));
+      if (got.status === 401 || got.status === 403) {
+        return {
+          ...base,
+          verdict: `${candidate}/${version} exists but rejected the key — check it matches this product's subscription`,
+        };
+      }
+      if (apiExists(got.body) || (got.status !== null && got.status < 400)) {
+        found = { slug: candidate, version };
+        break outer;
+      }
     }
   }
 
-  if (!slug) {
+  if (!found) {
     return {
       ...base,
-      verdict:
-        "no product slug matched — every candidate returned product-not-found, so the slug itself is wrong. Copy the endpoint from the DataHub product page.",
+      verdict: `no product matched — every candidate slug returned product-not-found under ${product.versions.join(" and ")}, so the slug itself is wrong. Open this product in the DataHub portal and copy the request URL it shows.`,
     };
   }
 
-  /* Pass two: the resource, under the slug now known to exist. */
+  const { slug, version } = found;
+
+  /* Pass two: the resource, under the slug and version now known to exist. */
   for (const resource of product.resources) {
-    const url = `${HOST}/${slug}/1.0.0/${resource}`;
+    const url = `${HOST}/${slug}/${version}/${resource}`;
     const got = await get(url, key);
     if (got.status !== null && got.status >= 200 && got.status < 300) {
       const attempt = describe(url, got);
@@ -294,7 +299,7 @@ async function probe(product: Product): Promise<ProductDiscovery> {
 
   return {
     ...base,
-    verdict: `product "${slug}" exists but none of the tried resources matched — the slug is right and the resource is not. Copy the exact path from the DataHub product page.`,
+    verdict: `product "${slug}/${version}" exists but none of the tried resources matched — the slug is right and the resource is not. Copy the exact path from the DataHub product page.`,
   };
 }
 

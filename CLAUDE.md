@@ -139,11 +139,27 @@ nowcast, no radar rasters and no archive, which is most of what this app does.
   "no data", and guessing raster URLs is what took the Xweather map down for
   five rounds. The verdict distinguishes the two — all 404s means the path is
   wrong, a 401 means the path was right and the key was not.
-- **Atmospheric models are a poor fit and should probably stay unintegrated.**
-  They deliver gridded GRIB2 against orders placed in the portal; the files run
-  to hundreds of megabytes and GRIB2 decoding is not something a serverless
-  function should attempt. The discovery entry exists so the subscription is
-  visible, not as a step towards using it.
+- **Two of the three extra products are order-based, and neither is worth
+  integrating.** Atmospheric models deliver gridded GRIB2 against orders placed
+  in the portal: hundreds of megabytes, and GRIB2 decoding is not something a
+  serverless function should attempt. Map images turn out to work the same way —
+  `/map-images/1.0.0/orders`, `/orders/{name}/latest`, `/orders/{name}/latest/
+  {fileId}/data`, `/runs?sort=RUNDATETIME`, taken from the Met Office's own
+  [map_images_download utility](https://github.com/MetOffice/weather_datahub_utilities)
+  rather than guessed — and they are fixed-resolution PNGs of the Global 10 km
+  model limited to precipitation rate, surface temperature and MSLP. That is
+  not radar, all three parameters already have Xweather rasters, and those
+  redraw at any zoom while these do not. Both entries exist so the
+  subscriptions are visible, not as a step towards using them.
+- **Land observations is the one worth having** — real hourly measurements from
+  ~150 stations for the past 48 hours, free at 360 calls a day, and the only
+  source here that is a measurement rather than a model. Its product slug is
+  still unknown: six spellings returned product-not-found. Get the URL from the
+  portal rather than adding a seventh guess.
+- **The version segment is not always `1.0.0`.** Site-specific lives at
+  `/sitespecific/v0/point/hourly`, so a slug that returns product-not-found
+  under one version has not been ruled out until the others are tried; pass one
+  now sweeps slug × version.
 - Probing costs real quota — land observations allows 360 calls a day — so each
   product stops at its first success and diagnostics is the only caller.
 
@@ -166,6 +182,11 @@ card and nothing else. All are covered by `/api/diagnostics`.
   (`findTurningPoints`). Predicted tide tables need an Admiralty subscription.
   The "next high water" line projects forward by the mean lunar interval and is
   labelled an estimate on the card — do not quietly promote it to a prediction.
+- **The tide gauge is two sequential EA requests and they share one 8s budget.**
+  Separate 8s and 6s timeouts totalled 14s against Netlify's 10s ceiling, so a
+  merely slow lookup guaranteed the readings query was killed and blamed. The
+  failure message now names the stage and its elapsed time, because "timeout"
+  alone never said which half was slow.
 - **Bathing water returns 403 and the card removes itself.** Four URL shapes
   were tried, with and without a User-Agent, and every one was refused while
   flood-monitoring — a different service on the same host — answered normally.
