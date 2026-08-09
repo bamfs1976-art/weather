@@ -2,7 +2,12 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Swansea Weather",
+  /*
+   * Both names in the tab. The separator is a middle dot rather than an em dash
+   * so the two read as one bilingual title rather than as a title and a
+   * subtitle, and the English leads because that is what the domain says.
+   */
+  title: "Swansea Weather · Tywydd Abertawe",
   description:
     "Personal weather dashboard: current conditions, minute-by-minute nowcast, 48-hour and 10-day forecasts, the last 24 hours, historical archives, air quality and radar maps.",
   applicationName: "Swansea Weather",

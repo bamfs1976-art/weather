@@ -60,7 +60,8 @@ src/
 |----------|-------------|
 | `XWEATHER_CLIENT_ID` | Xweather application ID from https://account.xweather.com/ |
 | `XWEATHER_CLIENT_SECRET` | Xweather application secret |
-| `METOFFICE_API_KEY` | Optional. Met Office DataHub, for the Second opinion card only |
+| `METOFFICE_API_KEY` | Optional. Met Office DataHub site-specific, for the Second opinion card |
+| `METOFFICE_MAP_API_KEY` | Optional. Met Office DataHub map-images — a separate subscription |
 
 Copy `.env.example` to `.env`. Without them the app still renders — every route
 returns a clear "credentials are not configured" notice instead of crashing.
@@ -126,6 +127,12 @@ nowcast, no radar rasters and no archive, which is most of what this app does.
   Anything more than 30 minutes apart is dropped rather than fudged.
 - Without a key the section returns `no_credentials` and the card explains how
   to switch it on, which is a setup step rather than an error.
+- **Map images are a separate product, key and subscription** (1000 images a
+  day free). `lib/metoffice-maps.ts` does not render anything yet: the request
+  path is not documented anywhere reachable, so it asks the service for its WMTS
+  capabilities and `/api/diagnostics` reports the layer list and tile template
+  it finds. Write the client from that answer — do not guess a tile URL, which
+  is the mistake that took the Xweather map down for five rounds.
 
 ## Other open data (no keys)
 

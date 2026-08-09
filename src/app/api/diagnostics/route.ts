@@ -15,6 +15,7 @@ import {
 } from "@/lib/water";
 import { getPollen } from "@/lib/pollen";
 import { getMetOfficeHourly } from "@/lib/metoffice";
+import { discoverMetOfficeMaps } from "@/lib/metoffice-maps";
 import {
   BASE_LAYERS,
   DECORATION_LAYERS,
@@ -214,6 +215,14 @@ export async function GET(request: NextRequest) {
 
   const routeDistinct = new Set(routeStacks.filter((s) => s.hash).map((s) => s.hash)).size;
 
+  /*
+   * Met Office map images: discovery, not a health check. The product's request
+   * path is not documented anywhere reachable from the build environment, so
+   * this asks the service for its own capabilities rather than guessing a URL —
+   * the answer is what the real client will be written against.
+   */
+  const metofficeMaps = await discoverMetOfficeMaps();
+
   const all = [...results, ...water];
 
   return NextResponse.json(
@@ -241,6 +250,18 @@ export async function GET(request: NextRequest) {
               ? "service returns a different image per stack — any sameness on screen is a display fault"
               : "service returned identical bytes for different stacks — the fault is upstream, not in the browser",
         results: mapStacks,
+      },
+      metofficeMaps: {
+        configured: metofficeMaps.configured,
+        endpoint: metofficeMaps.found?.url ?? null,
+        layers: metofficeMaps.found?.layers ?? null,
+        tileTemplate: metofficeMaps.found?.tileTemplate ?? null,
+        verdict: !metofficeMaps.configured
+          ? "METOFFICE_MAP_API_KEY not set"
+          : metofficeMaps.found
+            ? "found — the layer list and tile template above are what the client needs"
+            : "no candidate path answered; the statuses below say whether the paths are wrong or the key is",
+        attempts: metofficeMaps.attempts,
       },
       routeStacks: {
         distinctImages: routeDistinct,
