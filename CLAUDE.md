@@ -277,10 +277,20 @@ card and nothing else. All are covered by `/api/diagnostics`.
   merely slow lookup guaranteed the readings query was killed and blamed. The
   messages now carry the station, its distance, the measure URI and the raw row
   count — "no readings" was a dead end three rounds running.
-- **No fallback chains here.** Trying several URL shapes per hop is what pushed
-  the burst of Environment Agency calls past what the service absorbs and took
-  river levels down with it. One attempt per hop; if it fails, the message says
-  what came back.
+- **The tide fetch walks outwards through the gauges.** Mumbles (E72924) came
+  back with no rows for thirteen hours while six other gauges sat unqueried in
+  the same response, so a silent gauge is now a reason to ask the next one, not
+  to blank the card. Bounded by the remaining budget rather than a fixed count.
+  This is **not** the fallback chain that caused the throttling: that tried
+  several URL *shapes* against one station; this makes the same proven request
+  against a different station.
+- **Do not percent-encode the `since` timestamp.** A colon is legal in a query
+  value, and an upstream that does not decode `%3A` sees a malformed date and
+  answers with an empty list rather than an error — indistinguishable from a
+  silent gauge, which is how it went unnoticed through three rounds.
+- **Match the tidal measure on the id as well as the qualifier.** E72924
+  publishes `…-level-tidal_level-Mean-15_min-m`: plain metres, and no
+  `qualifier` field at all. Unit-only or qualifier-only matching misses it.
 - **Bathing water returns 403 and the card removes itself.** Four URL shapes
   were tried, with and without a User-Agent, and every one was refused while
   flood-monitoring — a different service on the same host — answered normally.
