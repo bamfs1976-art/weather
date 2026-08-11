@@ -1,4 +1,7 @@
 import type { MetOfficeForecast } from "./metoffice-types";
+import type { MetNoForecast } from "./metno-types";
+import type { ModelSpread } from "./model-types";
+import type { AuroraStatus, WeatherWarning } from "./warning-types";
 import type { PollenForecast } from "./pollen-types";
 /**
  * Types for the Xweather (Vaisala) Weather API responses used by the app.
@@ -383,6 +386,14 @@ export interface WeatherOverview {
     pollen: Section<PollenForecast>;
     /** Met Office site-specific forecast, carried for comparison. */
     metoffice: Section<MetOfficeForecast>;
+    /** MET Norway, the third forecast in the comparison. */
+    metno: Section<MetNoForecast>;
+    /** Met Office NSWWS severe weather warnings for the location's region. */
+    warnings: Section<{ region: string; regionId: string; warnings: WeatherWarning[] }>;
+    /** AuroraWatch UK geomagnetic status — national, not location-specific. */
+    aurora: Section<AuroraStatus>;
+    /** Per-model temperature and precipitation, for how much the models agree. */
+    modelSpread: Section<ModelSpread>;
   };
 }
 

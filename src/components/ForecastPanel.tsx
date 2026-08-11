@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ModelSpreadCard } from "./ModelSpreadCard";
 import { Card, Chip, Meter, Metric, SectionBody } from "./ui";
 import { SeriesChart } from "./Chart";
 import { CloudRainIcon, ConditionGlyph, WindIcon } from "@/components/icons";
@@ -34,7 +35,13 @@ export function ForecastPanel({
 
   return (
     <div className="space-y-4">
-      <Card title="10-day outlook" subtitle="Daily highs, lows and precipitation">
+      <ModelSpreadCard section={overview.sections.modelSpread} hour12={hour12} />
+
+      <Card
+        title="10-day outlook"
+        subtitle="Daily highs, lows and precipitation"
+        source="Vaisala Xweather"
+      >
         <SectionBody section={overview.sections.daily}>
           {(data) => {
             const periods = data.periods ?? [];

@@ -7,12 +7,19 @@ export function Card({
   title,
   subtitle,
   action,
+  source,
   children,
   className = "",
 }: {
   title?: ReactNode;
   subtitle?: ReactNode;
   action?: ReactNode;
+  /**
+   * Who the numbers came from. This app now blends nine upstreams, and a card
+   * that shows a temperature without saying whose it is makes the Xweather /
+   * Met Office / MET Norway disagreements look like a bug rather than the point.
+   */
+  source?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
@@ -34,6 +41,11 @@ export function Card({
         </header>
       )}
       {children}
+      {source && (
+        <p className="wx-dim mt-3 border-t border-[color:var(--wx-border)] pt-2 text-[11px]">
+          Source: {source}
+        </p>
+      )}
     </section>
   );
 }

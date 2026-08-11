@@ -15,6 +15,10 @@ import {
 } from "@/lib/water";
 import { getPollen } from "@/lib/pollen";
 import { getMetOfficeHourly } from "@/lib/metoffice";
+import { getMetNoForecast } from "@/lib/metno";
+import { getWeatherWarnings, regionFor } from "@/lib/warnings";
+import { getAuroraStatus } from "@/lib/aurora";
+import { getModelSpread, MODELS } from "@/lib/models";
 import { discoverDataHub } from "@/lib/metoffice-discovery";
 import {
   BASE_LAYERS,
@@ -106,11 +110,16 @@ export async function GET(request: NextRequest) {
          * three fallback URLs. Firing four EA requests at once here recreates
          * it, so diagnostics has been reporting a fault of its own making.
          */
-        const [marine, pollen, metoffice] = await Promise.all([
-          getMarineConditions(point.lat, point.lon),
-          getPollen(point.lat, point.lon),
-          getMetOfficeHourly(point.lat, point.lon),
-        ]);
+        const [marine, pollen, metoffice, metno, warnings, aurora, spread] =
+          await Promise.all([
+            getMarineConditions(point.lat, point.lon),
+            getPollen(point.lat, point.lon),
+            getMetOfficeHourly(point.lat, point.lon),
+            getMetNoForecast(point.lat, point.lon, 6),
+            getWeatherWarnings(point.lat, point.lon),
+            getAuroraStatus(),
+            getModelSpread(point.lat, point.lon, 6),
+          ]);
         const floods = await getFloodWarnings(point.lat, point.lon, 30);
         const rivers = await getRiverStations(point.lat, point.lon, 20, 2);
         const tides = await getTideGauge(point.lat, point.lon);
@@ -123,6 +132,25 @@ export async function GET(request: NextRequest) {
           { endpoint: "Open-Meteo Marine", ok: marine.ok, code: marine.code, message: marine.error },
           { endpoint: "Open-Meteo air quality (pollen)", ok: pollen.ok, code: pollen.code, message: pollen.error },
           { endpoint: "Met Office DataHub (site specific)", ok: metoffice.ok, code: metoffice.code, message: metoffice.error },
+          { endpoint: "MET Norway locationforecast", ok: metno.ok, code: metno.code, message: metno.error, hours: metno.data?.hours.length ?? 0 },
+          {
+            endpoint: `Met Office warnings (region ${regionFor(point.lat, point.lon).id})`,
+            ok: warnings.ok, code: warnings.code, message: warnings.error,
+            inForce: warnings.data?.warnings.length ?? 0,
+          },
+          { endpoint: "AuroraWatch UK", ok: aurora.ok, code: aurora.code, message: aurora.error, level: aurora.data?.level ?? null },
+          {
+            /*
+             * Which model identifiers are real. They could not be verified from
+             * the build environment, so anything listed as missing here every
+             * time is a wrong name and should be deleted from MODELS rather
+             * than left to fail quietly on every request.
+             */
+            endpoint: `Open-Meteo models (${MODELS.map((m) => m.id).join(", ")})`,
+            ok: spread.ok, code: spread.code, message: spread.error,
+            answered: spread.data?.models.map((m) => m.id) ?? [],
+            missing: spread.data?.missing ?? null,
+          },
         ];
       })()
     : [];

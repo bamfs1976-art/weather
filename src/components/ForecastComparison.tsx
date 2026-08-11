@@ -84,6 +84,27 @@ export function ForecastComparison({
   const first = comparison.hours[0];
   const nextMo = forecast.hours[0];
 
+  /*
+   * MET Norway, matched to the same instant rather than to index 0 of its own
+   * array. All three providers publish on their own schedule, so "the first
+   * hour each of them happens to return" is three different times — the trap
+   * compareForecasts already avoids between the other two.
+   */
+  const metnoHours = overview.sections.metno?.data?.hours ?? [];
+  const firstAt = Date.parse(first.timeISO);
+  const metnoAt = metnoHours.reduce<{ tempC: number | null; gapMs: number } | null>(
+    (best, hour) => {
+      const gap = Math.abs(Date.parse(hour.timeISO) - firstAt);
+      return Number.isFinite(gap) && (best === null || gap < best.gapMs)
+        ? { tempC: hour.tempC, gapMs: gap }
+        : best;
+    },
+    null
+  );
+  // Half an hour is the same tolerance compareForecasts uses; beyond that the
+  // two numbers describe different weather and should not sit side by side.
+  const metnoTempC = metnoAt && metnoAt.gapMs <= 30 * 60_000 ? metnoAt.tempC : null;
+
   /* ------------------------------ compact ------------------------------ */
   if (compact) {
     return (
@@ -110,6 +131,7 @@ export function ForecastComparison({
     <Card
       title="Second opinion"
       subtitle={`Met Office against Xweather, next ${comparison.overlap} hours`}
+      source="Xweather · Met Office DataHub · MET Norway"
       action={<Chip tone={agreement.tone}>{agreement.label}</Chip>}
     >
       <div className="grid gap-4">
@@ -125,6 +147,13 @@ export function ForecastComparison({
             note={forecast.siteName ?? "Nearest site"}
             icon={<ConditionIcon kind={nextMo.kind} night={nextMo.night} size={20} />}
           />
+          {metnoTempC !== null && (
+            <ProviderBox
+              name="MET Norway"
+              temp={formatTemp(metnoTempC, null, units)}
+              note="Third opinion"
+            />
+          )}
           <ProviderBox
             name="Average gap"
             temp={

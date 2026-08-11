@@ -10,6 +10,7 @@ import {
   formatWeekday,
   formatNumber,
   formatTime,
+  relativeFromNow,
   isNum,
   pollutantLabel,
 } from "@/lib/weather-format";
@@ -179,7 +180,47 @@ export function AirSunPanel({
         </SectionBody>
       </Card>
 
-      <Card title="Sun & moon" subtitle="Daylight, twilight and lunar detail for today">
+      {/*
+        * Aurora sits with sun and moon rather than with the weather: it is a
+        * geomagnetic measurement for the whole UK, not a forecast for this
+        * point, and the card says so rather than implying a local reading.
+        */}
+      {sections.aurora?.ok && sections.aurora.data && (
+        <Card
+          title="Aurora"
+          subtitle="Geomagnetic activity measured in the UK — not a local forecast"
+          source="AuroraWatch UK, Lancaster University"
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <Chip
+              tone={
+                sections.aurora.data.level === "red"
+                  ? "danger"
+                  : sections.aurora.data.level === "amber"
+                    ? "warn"
+                    : sections.aurora.data.level === "yellow"
+                      ? "default"
+                      : "good"
+              }
+            >
+              {sections.aurora.data.level.charAt(0).toUpperCase() +
+                sections.aurora.data.level.slice(1)}
+            </Chip>
+            <p className="text-sm">{sections.aurora.data.meaning}</p>
+          </div>
+          {sections.aurora.data.updatedISO && (
+            <p className="wx-dim mt-2 text-xs">
+              Measured {relativeFromNow(sections.aurora.data.updatedISO)}
+            </p>
+          )}
+        </Card>
+      )}
+
+      <Card
+        title="Sun & moon"
+        subtitle="Daylight, twilight and lunar detail for today"
+        source="Vaisala Xweather"
+      >
         <SectionBody section={sections.sunMoon}>
           {() => (
             <div className="space-y-4">
@@ -295,6 +336,13 @@ function PollenCard({
   hour12: boolean;
 }) {
   const section = overview.sections.pollen;
+  /*
+   * Guarded, not assumed. Reading `.ok` off a section that is simply absent
+   * threw, and took the whole Air & Sun tab down with it — a payload cached
+   * from before this section existed is enough to do it. "Sections degrade,
+   * they don't throw" has to cover the section not being there at all.
+   */
+  if (!section) return null;
   // Outside CAMS's European domain there is simply no forecast; that is not a
   // failure worth a warning box.
   if (!section.ok && section.code === "warn_no_data") return null;

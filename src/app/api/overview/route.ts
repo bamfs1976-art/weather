@@ -20,6 +20,10 @@ import {
 } from "@/lib/xweather";
 import { getPollen } from "@/lib/pollen";
 import { getMetOfficeHourly } from "@/lib/metoffice";
+import { getMetNoForecast } from "@/lib/metno";
+import { getWeatherWarnings } from "@/lib/warnings";
+import { getAuroraStatus } from "@/lib/aurora";
+import { getModelSpread } from "@/lib/models";
 import type { WeatherOverview } from "@/lib/weather-types";
 
 export const dynamic = "force-dynamic";
@@ -81,6 +85,10 @@ export async function GET(request: NextRequest) {
     recent,
     pollen,
     metoffice,
+    metno,
+    warnings,
+    aurora,
+    modelSpread,
   ] = await Promise.all([
     getCurrentConditions(point),
     getObservation(point),
@@ -104,6 +112,15 @@ export async function GET(request: NextRequest) {
         : null
     ),
     getMetOfficeHourly(resolved.data.lat, resolved.data.lon),
+    /*
+     * Four more upstreams, all keyless and all on hosts nothing else here
+     * touches, so they add no load to a service already being asked for
+     * something. Each is its own Section: a dead one blanks its card.
+     */
+    getMetNoForecast(resolved.data.lat, resolved.data.lon, 48),
+    getWeatherWarnings(resolved.data.lat, resolved.data.lon),
+    getAuroraStatus(),
+    getModelSpread(resolved.data.lat, resolved.data.lon, 48),
   ]);
 
   const payload: WeatherOverview = {
@@ -126,6 +143,10 @@ export async function GET(request: NextRequest) {
       recent,
       pollen,
       metoffice,
+      metno,
+      warnings,
+      aurora,
+      modelSpread,
     },
   };
 

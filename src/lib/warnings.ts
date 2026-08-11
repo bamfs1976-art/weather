@@ -1,0 +1,193 @@
+/**
+ * SERVER ONLY — Met Office National Severe Weather Warning Service.
+ *
+ * The gap this fills: Xweather's `alerts` endpoint answers for UK coordinates
+ * but its alert network is NWS-derived, and UK warnings come from NSWWS, which
+ * is a different system. A query for Swansea returned zero records — one sample
+ * that may simply mean "nothing in force", but the Met Office is the
+ * authoritative publisher for the UK either way.
+ *
+ * **This is a public cache endpoint, not a documented API.** The supported
+ * route is the NSWWS product on DataHub, which needs registration. This feed is
+ * what Home Assistant's feedreader and MMM-UKMOWeatherWarnings both read, so it
+ * is well-trodden, but it could change shape without notice. That is survivable
+ * here: the parser is tolerant, and a dead feed blanks one card rather than the
+ * page. If it ever goes for good, the DataHub product is the replacement.
+ *
+ * https://www.metoffice.gov.uk/weather/guides/warnings
+ */
+
+import type { Section } from "./weather-types";
+import type { WarningLevel, WeatherWarning } from "./warning-types";
+
+const BASE =
+  process.env.METOFFICE_WARNINGS_BASE ??
+  "https://www.metoffice.gov.uk/public/data/PWSCache/WarningsRSS/Region";
+
+/** Warnings change slowly and are issued hours ahead; ten minutes is plenty. */
+const TTL = 600;
+
+/**
+ * Met Office warning regions, as coarse bounding boxes.
+ *
+ * The feed is per-region, so a location has to be mapped to one. These boxes
+ * are deliberately rough — they only have to pick the right feed, and every
+ * region's warnings are national-scale weather rather than street-level. A
+ * point that matches nothing falls back to the UK-wide feed, which is a
+ * superset, so the failure mode is "too many warnings" rather than "none".
+ */
+const REGIONS: { id: string; name: string; minLat: number; maxLat: number; minLon: number; maxLon: number }[] = [
+  { id: "wl", name: "Wales", minLat: 51.3, maxLat: 53.5, minLon: -5.4, maxLon: -2.6 },
+  { id: "sw", name: "South West England", minLat: 49.8, maxLat: 52.1, minLon: -6.5, maxLon: -1.6 },
+  { id: "se", name: "South East England", minLat: 50.5, maxLat: 52.2, minLon: -1.8, maxLon: 1.9 },
+  { id: "wm", name: "West Midlands", minLat: 51.9, maxLat: 53.2, minLon: -3.2, maxLon: -1.2 },
+  { id: "em", name: "East Midlands", minLat: 52.3, maxLat: 53.7, minLon: -1.9, maxLon: 0.6 },
+  { id: "ee", name: "East of England", minLat: 51.5, maxLat: 53.1, minLon: -0.8, maxLon: 1.8 },
+  { id: "nw", name: "North West England", minLat: 52.9, maxLat: 55.2, minLon: -3.7, maxLon: -1.9 },
+  { id: "ne", name: "North East England", minLat: 54.0, maxLat: 55.9, minLon: -2.7, maxLon: -0.6 },
+  { id: "yh", name: "Yorkshire & Humber", minLat: 53.2, maxLat: 54.6, minLon: -2.6, maxLon: 0.3 },
+  { id: "ni", name: "Northern Ireland", minLat: 54.0, maxLat: 55.4, minLon: -8.3, maxLon: -5.3 },
+  { id: "st", name: "Central, Tayside & Fife", minLat: 55.8, maxLat: 57.0, minLon: -5.2, maxLon: -2.4 },
+  { id: "gr", name: "Grampian", minLat: 56.6, maxLat: 58.0, minLon: -4.2, maxLon: -1.7 },
+  { id: "hi", name: "Highlands & Islands", minLat: 56.4, maxLat: 61.0, minLon: -8.7, maxLon: -0.7 },
+  { id: "sw-scot", name: "SW Scotland, Lothian & Borders", minLat: 54.6, maxLat: 56.3, minLon: -5.4, maxLon: -1.9 },
+];
+
+export function regionFor(lat: number, lon: number): { id: string; name: string } {
+  const hit = REGIONS.find(
+    (r) => lat >= r.minLat && lat <= r.maxLat && lon >= r.minLon && lon <= r.maxLon
+  );
+  return hit ? { id: hit.id, name: hit.name } : { id: "UK", name: "United Kingdom" };
+}
+
+function fail<T>(error: string, code: string | null = null): Section<T> {
+  return { ok: false, data: null, error, code };
+}
+
+/** Strip tags and decode the handful of entities RSS actually uses. */
+function text(raw: string): string {
+  return raw
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tag(block: string, name: string): string | null {
+  const match = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, "i"));
+  return match ? text(match[1]) : null;
+}
+
+/**
+ * The level is carried in the title — "Yellow warning of rain affecting Wales".
+ * There is no machine-readable severity field on this feed, which is one of the
+ * reasons it is a cache rather than an API.
+ */
+function levelFrom(title: string): WarningLevel {
+  const lower = title.toLowerCase();
+  if (lower.includes("red warning")) return "red";
+  if (lower.includes("amber warning")) return "amber";
+  if (lower.includes("yellow warning")) return "yellow";
+  return "unknown";
+}
+
+/** "Yellow warning of rain affecting Wales" -> "rain". */
+function hazardFrom(title: string): string | null {
+  const match = title.match(/warning of ([^,]+?)(?: affecting| for |$)/i);
+  return match ? match[1].trim() : null;
+}
+
+/**
+ * The feed puts validity in the description as free text, e.g.
+ * "valid from 1500 Mon 11 Aug to 2100 Mon 11 Aug". It is shown as published
+ * rather than parsed into timestamps: a mis-parsed warning window is worse than
+ * no window, and the string is already human-readable.
+ */
+function validityFrom(description: string): string | null {
+  const match = description.match(/valid from[^.]*/i);
+  return match ? match[0].trim() : null;
+}
+
+export async function getWeatherWarnings(
+  lat: number,
+  lon: number
+): Promise<Section<{ region: string; regionId: string; warnings: WeatherWarning[] }>> {
+  const region = regionFor(lat, lon);
+  const url = `${BASE}/${encodeURIComponent(region.id)}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      next: { revalidate: TTL },
+      headers: {
+        Accept: "application/rss+xml, application/xml, text/xml",
+        "User-Agent": "swanseaweather/1.0 (+https://swanseaweather.netlify.app)",
+      },
+      signal: AbortSignal.timeout(6_000),
+    });
+  } catch (err) {
+    const timedOut = err instanceof Error && /Timeout|Abort/.test(err.name);
+    return fail(
+      timedOut
+        ? "The Met Office warnings feed did not respond in time."
+        : "Could not reach the Met Office warnings feed.",
+      timedOut ? "timeout" : "network"
+    );
+  }
+
+  if (!res.ok) {
+    return fail(`The warnings feed returned HTTP ${res.status}.`, `http_${res.status}`);
+  }
+
+  const body = await res.text();
+  if (!/<rss|<feed|<channel/i.test(body)) {
+    return fail("The warnings feed did not return RSS.", "bad_response");
+  }
+
+  const items = body.split(/<item[\s>]/i).slice(1);
+  const warnings: WeatherWarning[] = [];
+
+  for (const raw of items) {
+    const title = tag(raw, "title");
+    if (!title) continue;
+    /*
+     * When nothing is in force the feed still returns an item saying so, rather
+     * than an empty channel. Treating that as a warning would put a permanent
+     * banner on the page.
+     */
+    if (/there are currently no severe weather warnings|no warnings/i.test(title)) continue;
+
+    const description = tag(raw, "description") ?? "";
+    warnings.push({
+      id: tag(raw, "guid") ?? tag(raw, "link") ?? title,
+      level: levelFrom(title),
+      hazard: hazardFrom(title),
+      title,
+      description: description || null,
+      validity: validityFrom(description),
+      issuedISO: (() => {
+        const published = tag(raw, "pubDate");
+        if (!published) return null;
+        const at = Date.parse(published);
+        return Number.isFinite(at) ? new Date(at).toISOString() : null;
+      })(),
+      link: tag(raw, "link"),
+    });
+  }
+
+  const RANK: Record<WarningLevel, number> = { red: 0, amber: 1, yellow: 2, unknown: 3 };
+  warnings.sort((a, b) => RANK[a.level] - RANK[b.level]);
+
+  return {
+    ok: true,
+    data: { region: region.name, regionId: region.id, warnings },
+    error: null,
+    code: null,
+  };
+}

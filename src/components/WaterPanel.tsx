@@ -179,6 +179,7 @@ function RiverBlock({ data, hour12 }: { data: WaterPayload; hour12: boolean }) {
     <Card
       title="River & sea levels"
       subtitle="Nearest gauges, with each reading against its typical range"
+      source="Environment Agency flood-monitoring (Welsh gauges owned by NRW)"
     >
       <SectionBody section={data.sections.rivers}>
         {(stations) => (

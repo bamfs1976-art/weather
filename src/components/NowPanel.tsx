@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { WarningBanner } from "./WarningBanner";
 import { Card, Chip, EmptyState, Meter, Metric, SectionBody, WindArrow } from "./ui";
 import { WeatherHero } from "./WeatherHero";
 import { MetricTile, RadialRing, Sparkline, UVScale, WindCompass } from "./MetricTile";
@@ -54,6 +55,17 @@ export function NowPanel({
 
   return (
     <div className="space-y-4">
+      {/*
+        * Met Office warnings sit above everything, including the Xweather
+        * alerts block. They are the authoritative UK source and the only thing
+        * on this page that should change what someone does today.
+        */}
+      {sections.warnings.ok && sections.warnings.data && (
+        <WarningBanner
+          region={sections.warnings.data.region}
+          warnings={sections.warnings.data.warnings}
+        />
+      )}
       <AlertsBlock overview={overview} hour12={hour12} />
 
       <WeatherHero overview={overview} units={units} hour12={hour12} />

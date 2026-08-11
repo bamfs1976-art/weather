@@ -188,6 +188,55 @@ nowcast, no radar rasters and no archive, which is most of what this app does.
   diagnostics is the only caller. Two products remain in the list and both
   resolve on their first request.
 
+## Keyless sources added beside the paid ones
+
+Four more upstreams, none of which needs a key or registration. All return
+`Section<T>`, all are in `/api/overview`, all report through `/api/diagnostics`.
+
+| Source | Card | Notes |
+|--------|------|-------|
+| Met Office NSWWS warnings | banner on **Now** | regional RSS; see the caveat below |
+| MET Norway Locationforecast | third box in Second opinion | User-Agent is required by their terms |
+| Open-Meteo per-model | **Model agreement** on 10-day | one request per model, on purpose |
+| AuroraWatch UK | card on Air & Sun | national measurement, not a local forecast |
+
+- **The warnings feed is a public cache, not an API.**
+  `…/PWSCache/WarningsRSS/Region/{id}` is what Home Assistant and
+  MMM-UKMOWeatherWarnings read, so it is well-trodden, but it has no
+  machine-readable severity field — the level is parsed out of the title — and
+  it could change shape without notice. The supported replacement is the NSWWS
+  product on DataHub, which needs registration. **The feed still returns an item
+  when nothing is in force**, so that title is filtered out; without that the
+  page carries a permanent banner.
+- **Xweather alerts are not a substitute.** Their network is NWS-derived and a
+  query for Swansea returned zero records. UK warnings come from NSWWS, and the
+  Met Office is the authoritative publisher whatever Xweather returns.
+- **`regionFor()` maps a point to a warning region by bounding box.** They are
+  deliberately coarse — they only pick a feed — and anything unmatched falls
+  back to the UK-wide feed, which is a superset. The failure mode is "too many
+  warnings", never "none".
+- **MET Norway will block a caller with no User-Agent**, and rejects
+  coordinates with more than four decimals. Both are their documented terms,
+  not politeness; `lat.toFixed(4)` is load-bearing.
+- **The model spread asks each model separately.** Open-Meteo accepts a
+  comma-separated `models=`, which would be one call — but one unrecognised
+  identifier fails the whole request, and these identifiers could not be
+  verified from the build environment. Separate requests mean a wrong name
+  costs its own model and nothing else. Diagnostics lists which answered:
+  **anything permanently missing is a wrong name and should be deleted from
+  `MODELS`**, not left to fail on every request.
+- **Spread measures agreement, not accuracy.** Models can agree and be wrong
+  together. The card says so; do not quietly reframe it as confidence in the
+  forecast being right.
+- **AuroraWatch ask for three minutes between requests**; the cache is ten.
+
+## Source attribution
+
+`Card` takes a `source` prop that renders a hairline-separated line at the
+bottom. With nine upstreams in play, a card showing a temperature without
+saying whose it is makes the Xweather / Met Office / MET Norway disagreements
+look like a bug rather than the point of the card.
+
 ## Other open data (no keys)
 
 Every one of these is keyless and Open Government Licence or equivalent, and
