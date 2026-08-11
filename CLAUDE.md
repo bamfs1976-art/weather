@@ -109,6 +109,13 @@ User picks a place (search / geolocation / saved chip)
   ones the configured key can actually reach — start there when a card is empty.
 - Responses carry both metric and imperial fields, so the unit toggle needs no
   extra requests.
+- **`places/{query}` wants an identifier, not a name.** Coordinates, a
+  postcode, an airport code or "city,state,country" resolve; a bare `Swansea`
+  returns `invalid_location`, and because every other endpoint takes the
+  resolved point, one unresolved place blanks the entire dashboard. `?p=` is
+  what the app writes to the URL and therefore what gets shared, so
+  `resolvePlace` falls back to one `places/search` lookup — the same call the
+  autocomplete already uses — and only when the direct lookup failed.
 - Timestamps carry the location's UTC offset; `weather-format.ts` formats in that
   offset so times read as local-for-the-place.
 - **Icons are drawn, not typed.** `src/components/icons.tsx` holds the whole set
