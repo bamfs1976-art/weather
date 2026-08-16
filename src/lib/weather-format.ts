@@ -405,11 +405,17 @@ const DRY: NextPrecipitation = {
   precision: "hour",
 };
 
-function minutesUntil(iso: string | null | undefined): number | null {
+/**
+ * Signed, deliberately. This used to clamp at zero, which turned "that hour
+ * finished two days ago" into "in about 0 hours" — the card announced rain
+ * imminent while pointing at a timestamp from the previous Friday, and the
+ * clamp is what made an impossible answer look like a plausible one.
+ */
+function minutesUntil(iso: string | null | undefined, now: number): number | null {
   if (!iso) return null;
   const then = Date.parse(iso);
   if (Number.isNaN(then)) return null;
-  return Math.max(0, Math.round((then - Date.now()) / 60_000));
+  return Math.round((then - now) / 60_000);
 }
 
 function describeType(
@@ -447,10 +453,34 @@ export function nextPrecipitation(
   }[],
   hourly: WeatherPeriod[],
   daily: WeatherPeriod[],
-  options: { hourlyPop?: number; dailyPop?: number } = {}
+  options: { hourlyPop?: number; dailyPop?: number; now?: number } = {}
 ): NextPrecipitation {
   const hourlyPop = options.hourlyPop ?? 30;
   const dailyPop = options.dailyPop ?? 40;
+  // Injectable so the "already happened" cases can actually be tested.
+  const now = options.now ?? Date.now();
+
+  /*
+   * Anything that has already finished is not "next".
+   *
+   * Nothing filtered these arrays before, so the search started at index 0 and
+   * happily returned a period that had been and gone — live, on a Sunday
+   * morning, the card read "Rain Showers likely in about 0 hours / From Fri
+   * 17:00". A forecast array is not guaranteed to begin at the current hour,
+   * and a payload held on a phone across a suspend is enough on its own.
+   */
+  const startOf = (p: WeatherPeriod) =>
+    Date.parse(p.dateTimeISO ?? p.validTime ?? "");
+  const HOUR = 3_600_000;
+  const upcomingHourly = hourly.filter((p) => {
+    const at = startOf(p);
+    // An hour that is currently running still counts; one that ended does not.
+    return Number.isNaN(at) || at + HOUR > now;
+  });
+  const upcomingDaily = daily.filter((p) => {
+    const at = startOf(p);
+    return Number.isNaN(at) || at + 24 * HOUR > now;
+  });
 
   /* 1 — the next 60 minutes, to the minute. */
   const rate = minutely.map((p) =>
@@ -470,7 +500,7 @@ export function nextPrecipitation(
       state: firstWet === 0 ? "now" : "soon",
       startISO: firstWet === 0 ? null : startISO,
       endISO: end < minutely.length ? (minutely[end].dateTimeISO ?? null) : null,
-      minutesAway: firstWet === 0 ? 0 : minutesUntil(startISO),
+      minutesAway: firstWet === 0 ? 0 : minutesUntil(startISO, now),
       durationMinutes: end < minutely.length ? run.length : null,
       probability: null,
       amountMM,
@@ -481,29 +511,41 @@ export function nextPrecipitation(
   }
 
   /* 2 — the next 48 hours. */
-  const wetHour = (p: WeatherPeriod) =>
-    (isNum(p.pop) && p.pop >= hourlyPop) ||
-    (isNum(p.precipMM) && p.precipMM > 0) ||
-    (p.weatherPrimary ? WET.test(p.weatherPrimary) : false);
+  /*
+   * When a probability is published it is the authority, and the condition
+   * label is only a fallback for when it is not.
+   *
+   * Previously any hour whose label matched /shower/ qualified, whatever the
+   * numbers said — so an hour labelled "Rain Showers" with a 10% chance and
+   * 0.0 mm produced the headline "Rain Showers likely", directly above a
+   * nowcast card reading "no precipitation expected in the next 60 minutes".
+   * The card was reporting the forecaster's wording as if it were the odds.
+   */
+  const wetHour = (p: WeatherPeriod) => {
+    if (isNum(p.precipMM) && p.precipMM > 0) return true;
+    if (isNum(p.pop)) return p.pop >= hourlyPop;
+    return p.weatherPrimary ? WET.test(p.weatherPrimary) : false;
+  };
 
-  const hourIndex = hourly.findIndex(wetHour);
+  const hourIndex = upcomingHourly.findIndex(wetHour);
   if (hourIndex !== -1) {
     let end = hourIndex;
-    while (end < hourly.length && wetHour(hourly[end])) end += 1;
-    const run = hourly.slice(hourIndex, end);
+    while (end < upcomingHourly.length && wetHour(upcomingHourly[end])) end += 1;
+    const run = upcomingHourly.slice(hourIndex, end);
     const startISO =
-      hourly[hourIndex].dateTimeISO ?? hourly[hourIndex].validTime ?? null;
-    const away = minutesUntil(startISO);
+      upcomingHourly[hourIndex].dateTimeISO ?? upcomingHourly[hourIndex].validTime ?? null;
+    const away = minutesUntil(startISO, now);
 
     return {
-      state: away !== null && away <= 60 ? "soon" : "later",
+      // A wet hour already under way is happening now, not "later".
+      state: away !== null && away <= 0 ? "now" : away !== null && away <= 60 ? "soon" : "later",
       startISO,
       endISO:
-        end < hourly.length
-          ? (hourly[end].dateTimeISO ?? hourly[end].validTime ?? null)
+        end < upcomingHourly.length
+          ? (upcomingHourly[end].dateTimeISO ?? upcomingHourly[end].validTime ?? null)
           : null,
-      minutesAway: away,
-      durationMinutes: end < hourly.length ? run.length * 60 : null,
+      minutesAway: away === null ? null : Math.max(0, away),
+      durationMinutes: end < upcomingHourly.length ? run.length * 60 : null,
       probability: Math.max(
         ...run.map((p) => (isNum(p.pop) ? p.pop : 0)),
         0
@@ -516,19 +558,20 @@ export function nextPrecipitation(
   }
 
   /* 3 — anything left in the 10-day outlook. */
-  const dayIndex = daily.findIndex(
+  const dayIndex = upcomingDaily.findIndex(
     (p) =>
       (isNum(p.pop) && p.pop >= dailyPop) ||
       (isNum(p.precipMM) && p.precipMM >= 0.5)
   );
   if (dayIndex !== -1) {
-    const day = daily[dayIndex];
+    const day = upcomingDaily[dayIndex];
     const startISO = day.dateTimeISO ?? day.validTime ?? null;
+    const away = minutesUntil(startISO, now);
     return {
       state: "later",
       startISO,
       endISO: null,
-      minutesAway: minutesUntil(startISO),
+      minutesAway: away === null ? null : Math.max(0, away),
       durationMinutes: null,
       probability: isNum(day.pop) ? day.pop : null,
       amountMM: isNum(day.precipMM) ? day.precipMM : null,
