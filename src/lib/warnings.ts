@@ -24,6 +24,24 @@ const BASE =
   process.env.METOFFICE_WARNINGS_BASE ??
   "https://www.metoffice.gov.uk/public/data/PWSCache/WarningsRSS/Region";
 
+/*
+ * MeteoAlarm carries the same Met Office warnings as CAP inside an Atom feed.
+ *
+ * It is preferred over the RSS above because CAP publishes severity, urgency,
+ * certainty, onset and expiry as *fields*. The RSS has none of that: the level
+ * is parsed out of the title, which is why this file has a `levelFrom()` regex
+ * and a caveat about the feed changing shape without notice. The Met Office
+ * publishes to MeteoAlarm as a EUMETNET member, so this is the same authority
+ * through a machine-readable door.
+ *
+ * The RSS stays as the fallback. It is regional where this feed is national, so
+ * when MeteoAlarm answers its entries are filtered to the region by areaDesc.
+ * https://feeds.meteoalarm.org/
+ */
+const METEOALARM =
+  process.env.METEOALARM_BASE ??
+  "https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-united-kingdom";
+
 /** Warnings change slowly and are issued hours ahead; ten minutes is plenty. */
 const TTL = 600;
 
@@ -100,7 +118,10 @@ function levelFrom(title: string): WarningLevel {
 /** "Yellow warning of rain affecting Wales" -> "rain". */
 function hazardFrom(title: string): string | null {
   const match = title.match(/warning of ([^,]+?)(?: affecting| for |$)/i);
-  return match ? match[1].trim() : null;
+  if (match) return match[1].trim();
+  // CAP events are already the hazard ("Rain", "Wind", "Snow-Ice").
+  const known = title.match(/\b(rain|wind|snow|ice|fog|thunder\w*|heat|cold|flood)\b/i);
+  return known ? known[1].toLowerCase() : null;
 }
 
 /**
@@ -114,11 +135,118 @@ function validityFrom(description: string): string | null {
   return match ? match[0].trim() : null;
 }
 
+/** CAP severity is a controlled vocabulary, which is the entire point of it. */
+function levelFromCap(severity: string | null, event: string | null): WarningLevel {
+  switch ((severity ?? "").trim().toLowerCase()) {
+    case "extreme":
+    case "severe":
+      return "red";
+    case "moderate":
+      return "amber";
+    case "minor":
+      return "yellow";
+    default:
+      // Some producers put the colour in the event text instead.
+      return levelFrom(event ?? "");
+  }
+}
+
+/**
+ * MeteoAlarm's UK Atom feed, filtered to the region.
+ *
+ * Returns null rather than an error Section: this is an upgrade over the RSS,
+ * not a replacement, so anything unexpected falls through to the feed that was
+ * already working instead of blanking the banner.
+ */
+async function fromMeteoAlarm(
+  region: { id: string; name: string }
+): Promise<WeatherWarning[] | null> {
+  let body: string;
+  try {
+    const res = await fetch(METEOALARM, {
+      next: { revalidate: TTL },
+      headers: {
+        Accept: "application/atom+xml, application/xml, text/xml",
+        "User-Agent": "swanseaweather/1.0 (+https://swanseaweather.netlify.app)",
+      },
+      signal: AbortSignal.timeout(6_000),
+    });
+    if (!res.ok) return null;
+    body = await res.text();
+  } catch {
+    return null;
+  }
+  if (!/<feed|<entry/i.test(body)) return null;
+
+  const out: WeatherWarning[] = [];
+  for (const raw of body.split(/<entry[\s>]/i).slice(1)) {
+    /*
+     * The national feed covers every UK region, so entries are matched against
+     * the region this location maps to. An entry naming no area at all is kept:
+     * a UK-wide warning applies here too, and dropping it would be the one
+     * failure mode this card must not have.
+     */
+    const area = tag(raw, "cap:areaDesc") ?? tag(raw, "areaDesc");
+    if (area && !new RegExp(region.name.split(/[ &,]+/)[0], "i").test(area)) continue;
+
+    const event = tag(raw, "cap:event") ?? tag(raw, "event") ?? tag(raw, "title");
+    if (!event) continue;
+    const severity = tag(raw, "cap:severity") ?? tag(raw, "severity");
+    const onset = tag(raw, "cap:onset") ?? tag(raw, "onset");
+    const expires = tag(raw, "cap:expires") ?? tag(raw, "expires");
+
+    const window =
+      onset && expires
+        ? `Valid from ${onset.replace("T", " ").slice(0, 16)} to ${expires
+            .replace("T", " ")
+            .slice(0, 16)}`
+        : null;
+
+    out.push({
+      id: tag(raw, "id") ?? `${event}-${onset ?? ""}`,
+      level: levelFromCap(severity, event),
+      hazard: hazardFrom(event) ?? event,
+      title: area ? `${event} affecting ${area}` : event,
+      description:
+        tag(raw, "cap:description") ?? tag(raw, "description") ?? tag(raw, "summary"),
+      validity: window,
+      issuedISO: (() => {
+        const sent = tag(raw, "cap:sent") ?? tag(raw, "updated") ?? tag(raw, "published");
+        const at = sent ? Date.parse(sent) : NaN;
+        return Number.isFinite(at) ? new Date(at).toISOString() : null;
+      })(),
+      link: tag(raw, "link") ?? "https://www.metoffice.gov.uk/weather/warnings-and-advice/uk-warnings",
+    });
+  }
+
+  return out.length > 0 ? out : null;
+}
+
 export async function getWeatherWarnings(
   lat: number,
   lon: number
-): Promise<Section<{ region: string; regionId: string; warnings: WeatherWarning[] }>> {
+): Promise<
+  Section<{ region: string; regionId: string; via: string; warnings: WeatherWarning[] }>
+> {
   const region = regionFor(lat, lon);
+
+  /*
+   * CAP first. Only if it gives nothing usable does the title-parsing RSS run,
+   * so the structured source is the one normally in play and the scraped one is
+   * genuinely a fallback rather than the default.
+   */
+  const cap = await fromMeteoAlarm(region);
+  if (cap) {
+    const RANK: Record<WarningLevel, number> = { red: 0, amber: 1, yellow: 2, unknown: 3 };
+    cap.sort((a, b) => RANK[a.level] - RANK[b.level]);
+    return {
+      ok: true,
+      data: { region: region.name, regionId: region.id, via: "meteoalarm-cap", warnings: cap },
+      error: null,
+      code: null,
+    };
+  }
+
   const url = `${BASE}/${encodeURIComponent(region.id)}`;
 
   let res: Response;
@@ -186,7 +314,7 @@ export async function getWeatherWarnings(
 
   return {
     ok: true,
-    data: { region: region.name, regionId: region.id, warnings },
+    data: { region: region.name, regionId: region.id, via: "nswws-rss", warnings },
     error: null,
     code: null,
   };

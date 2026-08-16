@@ -33,6 +33,24 @@ export interface RiverStation {
   lookupFailed?: boolean;
 }
 
+/**
+ * What the flood warning answer actually covers.
+ *
+ * The Environment Agency's flood-monitoring API is **England only** —
+ * Wales, Scotland and Northern Ireland have their own flood agencies. Nothing
+ * said so anywhere the user could see, so a Welsh location got the reassuring
+ * "no flood warnings or alerts in force within 30 km" when the truthful answer
+ * was "this area is not covered". That is the worst possible failure for a
+ * flood card, and it was the app's own home location.
+ */
+export interface FloodReport {
+  /** Nations the answering source actually covers. */
+  coverage: string;
+  /** True when the card may state an all-clear rather than "not covered". */
+  authoritative: boolean;
+  warnings: FloodWarning[];
+}
+
 export interface FloodWarning {
   id: string;
   severity: string;
@@ -111,7 +129,7 @@ export interface WaterPayload {
   place: { lat: number; lon: number; name: string };
   fetchedAt: string;
   sections: {
-    floods: Section<FloodWarning[]>;
+    floods: Section<FloodReport>;
     rivers: Section<RiverStation[]>;
     marine: Section<MarineConditions>;
     tides: Section<TideGauge>;

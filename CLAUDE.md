@@ -209,17 +209,30 @@ nowcast, no radar rasters and no archive, which is most of what this app does.
 
 ## Keyless sources added beside the paid ones
 
-Four more upstreams, none of which needs a key or registration. All return
-`Section<T>`, all are in `/api/overview`, all report through `/api/diagnostics`.
+Six more upstreams, none of which needs a key or registration. All return
+`Section<T>`, all report through `/api/diagnostics`. All but ERA5 are in
+`/api/overview`.
 
 | Source | Card | Notes |
 |--------|------|-------|
-| Met Office NSWWS warnings | banner on **Now** | regional RSS; see the caveat below |
+| MeteoAlarm CAP / Met Office NSWWS | banner on **Now** | CAP first, RSS as fallback; see below |
 | MET Norway Locationforecast | third box in Second opinion | User-Agent is required by their terms |
 | Open-Meteo per-model | **Model agreement** on 10-day | one request per model, on purpose |
+| Open-Meteo ensemble | **How certain is it?** on 10-day | probability as a member count |
+| Open-Meteo ERA5 archive | **Against the record** on History | own route — the payload is ~⅓ MB |
 | AuroraWatch UK | card on Air & Sun | national measurement, not a local forecast |
 
-- **The warnings feed is a public cache, not an API.**
+- **Warnings prefer MeteoAlarm's CAP feed and fall back to the RSS.** CAP
+  publishes `cap:severity` as a controlled vocabulary — Extreme/Severe → red,
+  Moderate → amber, Minor → yellow — so the level is *read* rather than guessed
+  out of the title, and `cap:onset`/`cap:expires` give a real validity window.
+  `fromMeteoAlarm()` returns `null` rather than a failed Section precisely so a
+  bad day at MeteoAlarm falls through to the RSS instead of blanking the banner;
+  `via` records which one answered and diagnostics reports it. Entries are
+  filtered by `cap:areaDesc` against the region name, and **an entry with no
+  area at all is kept** — UK-wide warnings carry no area, and dropping them
+  would discard the most important ones.
+- **The RSS fallback is a public cache, not an API.**
   `…/PWSCache/WarningsRSS/Region/{id}` is what Home Assistant and
   MMM-UKMOWeatherWarnings read, so it is well-trodden, but it has no
   machine-readable severity field — the level is parsed out of the title — and
@@ -247,6 +260,32 @@ Four more upstreams, none of which needs a key or registration. All return
 - **Spread measures agreement, not accuracy.** Models can agree and be wrong
   together. The card says so; do not quietly reframe it as confidence in the
   forecast being right.
+- **The ensemble is the honest version of that, and the two cards are not
+  duplicates.** Model agreement compares four models that each ran once, so its
+  spread is an *inference* about confidence. The ensemble is one model run
+  dozens of times from perturbed starting states, so "40% chance of rain" is
+  literally the share of runs that produced ≥ 0.1 mm and the shaded band is
+  where eight runs in ten land. Keep the wording on each card distinct.
+- **Count the members, never assume them.** `memberSeries()` counts
+  `…_memberNN` keys in the response rather than hard-coding 51: the member count
+  differs per model and Open-Meteo can trim it. A response with fewer than three
+  members is rejected rather than presented as a percentile.
+- **`ENSEMBLES` is an ordered candidate list and the first that answers wins**,
+  same reasoning as `MODELS` — an identifier that cannot be verified from the
+  build environment should cost only itself.
+- **ERA5 is reanalysis, not observation.** A model run backwards over the
+  historical record for the grid square. Excellent for "is this month unusual",
+  but a "record" here is not one the Met Office would publish, and the card
+  carries that caveat explicitly — do not remove it or soften it to "records".
+- **ERA5 lags real time by about a week**, so `getClimateContext` ends its range
+  at now − 7 days and reports `lastDayISO` rather than implying it is current.
+- **Only complete years are ranked.** A half-finished August compared against 85
+  finished ones would rank on partial data — `year < thisYear` is the filter,
+  and `yearsCompared` is what the card shows so the denominator is visible.
+- **`/api/climate` is its own route on purpose.** The archive response is eighty
+  years of daily values, around a third of a megabyte; folding it into
+  `/api/overview` would put that on the critical path for every location change
+  to serve one card on a tab most visits never open.
 - **AuroraWatch ask for three minutes between requests**; the cache is ten.
 
 ## The Met Office tab
@@ -350,19 +389,33 @@ card and nothing else. All are covered by `/api/diagnostics`.
    `Section<T>` (`{ ok, data, error, code }`). Render a notice for `ok: false`
    rather than failing the page — a data set missing from the user's
    subscription tier is a normal outcome, not a bug.
-4. **No new dependencies without a reason.** Charts are inline SVG and dates are
+4. **A section may be absent as well as failed, and the types say so.** The
+   section maps on `WeatherOverview`, `HistoryPayload` and `ArchiveDayPayload`
+   are `Partial`, because each payload is JSON parsed off the wire and cast:
+   declaring a section non-optional asserts a guarantee the response cannot
+   make, and a route deployed before a section existed simply will not carry it.
+   Three times a component read `.ok` off an absent section and took its whole
+   tab down — the pollen card, the warnings banner, the station summaries. So
+   **reach a section through `?.`**, or hand it to `SectionBody`, which already
+   accepts `undefined`. The producing side keeps the stronger guarantee: the
+   routes annotate what they build with `satisfies OverviewSections` (and the
+   `History`/`Archive` equivalents), so adding a section to the interface fails
+   the build until the route supplies it. This is the same failure mode as
+   `Metric.icon` being typed `string` — when a type promises more than the value
+   can, the compiler stops helping.
+5. **No new dependencies without a reason.** Charts are inline SVG and dates are
    formatted by hand on purpose; keep it that way unless something genuinely
    needs a library.
-5. **Validate anything that reaches a URL path.** `/api/map` interpolates input
+6. **Validate anything that reaches a URL path.** `/api/map` interpolates input
    into an upstream URL that contains the credentials — the layer allow-list and
    offset regex exist for that reason.
-6. **Styling is Tailwind plus the `.wx` tokens** in `globals.css`. Note that
+7. **Styling is Tailwind plus the `.wx` tokens** in `globals.css`. Note that
    `globals.css` loads after Tailwind, so a `.wx-*` shorthand (e.g. `.wx-field`'s
    `padding`) will beat a utility class; add a scoped `.wx-*` variant instead of
    fighting it.
-7. **Test your work** — run `npm run build` and `npm run typecheck` after
+8. **Test your work** — run `npm run build` and `npm run typecheck` after
    changes.
-8. **Keep this file updated** when adding routes, components or conventions.
+9. **Keep this file updated** when adding routes, components or conventions.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

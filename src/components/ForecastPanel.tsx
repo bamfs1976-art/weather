@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ModelSpreadCard } from "./ModelSpreadCard";
+import { EnsembleCard } from "./EnsembleCard";
 import { Card, Chip, Meter, Metric, SectionBody } from "./ui";
 import { SeriesChart } from "./Chart";
 import { CloudRainIcon, ConditionGlyph, WindIcon } from "@/components/icons";
@@ -36,6 +37,7 @@ export function ForecastPanel({
   return (
     <div className="space-y-4">
       <ModelSpreadCard section={overview.sections.modelSpread} hour12={hour12} />
+      <EnsembleCard section={overview.sections.ensemble} hour12={hour12} />
 
       <Card
         title="10-day outlook"
@@ -237,7 +239,7 @@ function findDayNight(
   iso: string
 ): WeatherPeriod[] {
   const day = iso.slice(0, 10);
-  return (overview.sections.dayNight.data?.periods ?? []).filter((period) =>
+  return (overview.sections.dayNight?.data?.periods ?? []).filter((period) =>
     (period.dateTimeISO ?? period.validTime ?? "").startsWith(day)
   );
 }

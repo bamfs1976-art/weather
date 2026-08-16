@@ -21,6 +21,7 @@ import { latLonToGrid } from "./osgb";
 import type { Section } from "./weather-types";
 import type {
   BathingWater,
+  FloodReport,
   FloodWarning,
   MarineConditions,
   MarineHour,
@@ -187,7 +188,7 @@ export async function getFloodWarnings(
   lon: number,
   distKm = 30,
   offsetMinutes: number | null = null
-): Promise<Section<FloodWarning[]>> {
+): Promise<Section<FloodReport>> {
   const url = `${EA_BASE}/id/floods?lat=${lat}&long=${lon}&dist=${distKm}`;
   const section = await getJSON<{ items?: RawFlood | RawFlood[] }>(url, TTL.floods);
 
@@ -213,7 +214,18 @@ export async function getFloodWarnings(
     .filter((warning) => warning.severityLevel <= 3)
     .sort((a, b) => a.severityLevel - b.severityLevel);
 
-  return succeed(warnings);
+  /*
+   * `authoritative: false` because this source is England only. An empty list
+   * therefore means "nothing found in the area this API covers", which for
+   * Swansea is not the same as "no flooding expected" — and the card said the
+   * latter for months. Set this true only when the answering source actually
+   * covers the point.
+   */
+  return succeed({
+    coverage: "England (Environment Agency)",
+    authoritative: false,
+    warnings,
+  });
 }
 
 /* ------------------------------------------------------------------ */

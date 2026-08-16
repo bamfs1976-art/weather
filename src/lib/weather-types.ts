@@ -1,6 +1,7 @@
 import type { MetOfficeForecast } from "./metoffice-types";
 import type { MetNoForecast } from "./metno-types";
 import type { ModelSpread } from "./model-types";
+import type { EnsembleForecast } from "./ensemble-types";
 import type { AuroraStatus, WeatherWarning } from "./warning-types";
 import type { PollenForecast } from "./pollen-types";
 /**
@@ -362,11 +363,20 @@ export interface NormalsResponse {
   periods: NormalPeriod[];
 }
 
-/** Everything the dashboard needs for a location, in one payload. */
+/**
+ * Everything the dashboard needs for a location, in one payload.
+ *
+ * The section maps below are `Partial` on purpose. Every one of these payloads
+ * is JSON parsed off the wire and cast, so declaring a section non-optional
+ * asserts a guarantee the response cannot make — a route deployed before a
+ * section existed, or after one was removed, simply will not carry it. Twice
+ * now a component has read `.ok` off an absent section and taken its whole tab
+ * down with it. `Partial` makes the compiler ask for the guard instead.
+ */
 export interface WeatherOverview {
   place: ResolvedPlace;
   fetchedAt: string;
-  sections: {
+  sections: Partial<{
     current: Section<ConditionsResponse>;
     observation: Section<ObservationResponse>;
     minutely: Section<{ periods: MinutelyPeriod[] }>;
@@ -389,34 +399,48 @@ export interface WeatherOverview {
     /** MET Norway, the third forecast in the comparison. */
     metno: Section<MetNoForecast>;
     /** Met Office NSWWS severe weather warnings for the location's region. */
-    warnings: Section<{ region: string; regionId: string; warnings: WeatherWarning[] }>;
+    warnings: Section<{ region: string; regionId: string; via: string; warnings: WeatherWarning[] }>;
     /** AuroraWatch UK geomagnetic status — national, not location-specific. */
     aurora: Section<AuroraStatus>;
     /** Per-model temperature and precipitation, for how much the models agree. */
     modelSpread: Section<ModelSpread>;
-  };
+    /** A true ensemble: probability as a member count rather than an inference. */
+    ensemble: Section<EnsembleForecast>;
+  }>;
 }
 
 export interface HistoryPayload {
   place: ResolvedPlace;
   from: string;
   to: string;
-  sections: {
+  sections: Partial<{
     dailySummaries: Section<ConditionsResponse>;
     stationSummaries: Section<ConditionsResponse>;
     normals: Section<NormalsResponse>;
-  };
+  }>;
 }
 
 export interface ArchiveDayPayload {
   place: ResolvedPlace;
   date: string;
-  sections: {
+  sections: Partial<{
     hourly: Section<ConditionsResponse>;
     observations: Section<{ periods: WeatherPeriod[] }>;
     sunMoon: Section<SunMoonResponse>;
-  };
+  }>;
 }
+
+/*
+ * The other half of the `Partial` above. A reader can only rely on a section
+ * being *possibly* there, but a route has no excuse for leaving one out — every
+ * fetch already returns a `Section`, so an omission means someone forgot to
+ * wire it up, not that the data was unavailable. The routes annotate what they
+ * build with these, so adding a section to the interface fails the build until
+ * the route supplies it.
+ */
+export type OverviewSections = Required<WeatherOverview["sections"]>;
+export type HistorySections = Required<HistoryPayload["sections"]>;
+export type ArchiveSections = Required<ArchiveDayPayload["sections"]>;
 
 export interface PlaceSuggestion {
   id: string;

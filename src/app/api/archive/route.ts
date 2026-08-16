@@ -7,7 +7,7 @@ import {
   httpStatusForCode,
   resolvePlace,
 } from "@/lib/xweather";
-import type { ArchiveDayPayload } from "@/lib/weather-types";
+import type { ArchiveDayPayload, ArchiveSections } from "@/lib/weather-types";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
   const payload: ArchiveDayPayload = {
     place: resolved.data,
     date,
-    sections: { hourly, observations, sunMoon },
+    sections: { hourly, observations, sunMoon } satisfies ArchiveSections,
   };
 
   return NextResponse.json(payload, {

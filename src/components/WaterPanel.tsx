@@ -100,7 +100,7 @@ export function WaterPanel({
         River levels, tide gauges and flood warnings © Environment Agency, Open
         Government Licence — Welsh gauges in this feed are owned by Natural
         Resources Wales
-        {data.sections.bathing.ok ? ", who also publish the bathing water classifications" : ""}
+        {data.sections.bathing?.ok ? ", who also publish the bathing water classifications" : ""}
         . Sea state from Open-Meteo&rsquo;s 5 km European marine model.
       </p>
     </div>
@@ -114,12 +114,28 @@ function FloodBlock({ data }: { data: WaterPayload }) {
 
   return (
     <SectionBody section={section} empty="Flood warnings unavailable.">
-      {(warnings) =>
-        warnings.length === 0 ? (
-          <Card title="Flood warnings">
-            <p className="text-sm wx-good-text">
-              No flood warnings or alerts in force within 30 km.
-            </p>
+      {(report) => {
+        const warnings = report.warnings;
+        return warnings.length === 0 ? (
+          <Card title="Flood warnings" source={report.coverage}>
+            {report.authoritative ? (
+              <p className="text-sm wx-good-text">
+                No flood warnings or alerts in force within 30 km.
+              </p>
+            ) : (
+              /*
+               * Not an all-clear. The answering source covers England only, so
+               * for anywhere else an empty result means "not covered" — and
+               * saying otherwise on a flood card is the worst thing this app
+               * could get wrong.
+               */
+              <Notice>
+                No warnings found, but flood warnings here are published by{" "}
+                {report.coverage}, which does not cover the whole UK. Treat this
+                as &ldquo;nothing found&rdquo; rather than an all-clear, and check
+                your national flood service.
+              </Notice>
+            )}
           </Card>
         ) : (
           <div className="space-y-2">
@@ -163,8 +179,8 @@ function FloodBlock({ data }: { data: WaterPayload }) {
               );
             })}
           </div>
-        )
-      }
+        );
+      }}
     </SectionBody>
   );
 }

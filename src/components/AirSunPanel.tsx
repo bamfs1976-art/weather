@@ -26,10 +26,10 @@ export function AirSunPanel({
   hour12: boolean;
 }) {
   const { sections } = overview;
-  const aq = sections.airQuality.data?.periods?.[0] ?? null;
+  const aq = sections.airQuality?.data?.periods?.[0] ?? null;
   const category = aqiCategory(aq?.aqi);
-  const sun = sections.sunMoon.data?.sun ?? null;
-  const moon = sections.sunMoon.data?.moon ?? null;
+  const sun = sections.sunMoon?.data?.sun ?? null;
+  const moon = sections.sunMoon?.data?.moon ?? null;
   const aqiValue = aq && isNum(aq.aqi) ? aq.aqi : null;
   const moonIllum = moon?.phase?.illum ?? null;
   const moonAge = moon?.phase?.age ?? null;
@@ -39,8 +39,8 @@ export function AirSunPanel({
       <Card
         title="Air quality"
         subtitle={
-          sections.airQuality.data?.profile?.sources?.length
-            ? `Source: ${sections.airQuality.data.profile.sources
+          sections.airQuality?.data?.profile?.sources?.length
+            ? `Source: ${sections.airQuality?.data.profile.sources
                 .map((s) => s.name)
                 .join(", ")}`
             : "Current air quality index and pollutant breakdown"

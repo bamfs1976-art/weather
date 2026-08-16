@@ -7,7 +7,7 @@ import {
   httpStatusForCode,
   resolvePlace,
 } from "@/lib/xweather";
-import type { HistoryPayload } from "@/lib/weather-types";
+import type { HistoryPayload, HistorySections } from "@/lib/weather-types";
 
 export const dynamic = "force-dynamic";
 
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
     place: resolved.data,
     from,
     to,
-    sections: { dailySummaries, stationSummaries, normals },
+    sections: { dailySummaries, stationSummaries, normals } satisfies HistorySections,
   };
 
   return NextResponse.json(payload, {

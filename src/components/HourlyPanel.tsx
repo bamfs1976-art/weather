@@ -129,9 +129,9 @@ export function HourlyPanel({
         </SectionBody>
 
         {expanded !== null &&
-          overview.sections.hourly.data?.periods?.[expanded] && (
+          overview.sections.hourly?.data?.periods?.[expanded] && (
             <HourDetail
-              period={overview.sections.hourly.data.periods[expanded]}
+              period={overview.sections.hourly?.data.periods[expanded]}
               units={units}
               hour12={hour12}
               onClose={() => setExpanded(null)}

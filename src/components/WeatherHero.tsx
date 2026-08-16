@@ -36,14 +36,14 @@ export function WeatherHero({
   hour12: boolean;
 }) {
   const { sections, place } = overview;
-  const current = sections.current.data?.periods?.[0] ?? null;
-  const today = sections.daily.data?.periods?.[0] ?? null;
+  const current = sections.current?.data?.periods?.[0] ?? null;
+  const today = sections.daily?.data?.periods?.[0] ?? null;
   const condition = classifyCondition(current?.icon, current?.weatherPrimaryCoded);
   const motion = skyMotion(condition);
   const offset =
     tzOffsetMinutes(current?.dateTimeISO) ??
     (isNum(place.tzoffset) ? place.tzoffset / 60 : null);
-  const pop = sections.hourly.data?.periods?.[0]?.pop ?? null;
+  const pop = sections.hourly?.data?.periods?.[0]?.pop ?? null;
   const uv = uviCategory(current?.uvi);
 
   return (
@@ -120,8 +120,8 @@ export function WeatherHero({
           )}
         </div>
 
-        {sections.phrase.data?.periods?.[0]?.text && (
-          <p className="wx-hero-phrase">{sections.phrase.data.periods[0].text}</p>
+        {sections.phrase?.data?.periods?.[0]?.text && (
+          <p className="wx-hero-phrase">{sections.phrase?.data.periods[0].text}</p>
         )}
       </div>
     </section>

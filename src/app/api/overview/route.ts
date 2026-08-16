@@ -24,7 +24,8 @@ import { getMetNoForecast } from "@/lib/metno";
 import { getWeatherWarnings } from "@/lib/warnings";
 import { getAuroraStatus } from "@/lib/aurora";
 import { getModelSpread } from "@/lib/models";
-import type { WeatherOverview } from "@/lib/weather-types";
+import { getEnsemble } from "@/lib/ensemble";
+import type { OverviewSections, WeatherOverview } from "@/lib/weather-types";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +90,7 @@ export async function GET(request: NextRequest) {
     warnings,
     aurora,
     modelSpread,
+    ensemble,
   ] = await Promise.all([
     getCurrentConditions(point),
     getObservation(point),
@@ -121,6 +123,7 @@ export async function GET(request: NextRequest) {
     getWeatherWarnings(resolved.data.lat, resolved.data.lon),
     getAuroraStatus(),
     getModelSpread(resolved.data.lat, resolved.data.lon, 48),
+    getEnsemble(resolved.data.lat, resolved.data.lon, 48),
   ]);
 
   const payload: WeatherOverview = {
@@ -147,7 +150,8 @@ export async function GET(request: NextRequest) {
       warnings,
       aurora,
       modelSpread,
-    },
+      ensemble,
+    } satisfies OverviewSections,
   };
 
   return NextResponse.json(payload, {

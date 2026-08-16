@@ -38,7 +38,7 @@ export function ForecastComparison({
   compact?: boolean;
 }) {
   const section = overview.sections.metoffice;
-  const xwHours = overview.sections.hourly.data?.periods ?? [];
+  const xwHours = overview.sections.hourly?.data?.periods ?? [];
 
   // Not configured is a setup step, not a failure — say how to switch it on.
   if (!section?.ok && section?.code === "no_credentials") {

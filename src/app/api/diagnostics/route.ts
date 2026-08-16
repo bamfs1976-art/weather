@@ -19,6 +19,8 @@ import { getMetNoForecast } from "@/lib/metno";
 import { getWeatherWarnings, regionFor } from "@/lib/warnings";
 import { getAuroraStatus } from "@/lib/aurora";
 import { getModelSpread, MODELS } from "@/lib/models";
+import { getEnsemble, ENSEMBLES } from "@/lib/ensemble";
+import { getClimateContext } from "@/lib/climate";
 import { discoverDataHub } from "@/lib/metoffice-discovery";
 import {
   BASE_LAYERS,
@@ -110,7 +112,7 @@ export async function GET(request: NextRequest) {
          * three fallback URLs. Firing four EA requests at once here recreates
          * it, so diagnostics has been reporting a fault of its own making.
          */
-        const [marine, pollen, metoffice, metno, warnings, aurora, spread] =
+        const [marine, pollen, metoffice, metno, warnings, aurora, spread, ensemble, climate] =
           await Promise.all([
             getMarineConditions(point.lat, point.lon),
             getPollen(point.lat, point.lon),
@@ -119,13 +121,22 @@ export async function GET(request: NextRequest) {
             getWeatherWarnings(point.lat, point.lon),
             getAuroraStatus(),
             getModelSpread(point.lat, point.lon, 6),
+            getEnsemble(point.lat, point.lon, 6),
+            getClimateContext(point.lat, point.lon),
           ]);
         const floods = await getFloodWarnings(point.lat, point.lon, 30);
         const rivers = await getRiverStations(point.lat, point.lon, 20, 2);
         const tides = await getTideGauge(point.lat, point.lon);
         const bathing = await getBathingWaters(point.lat, point.lon);
         return [
-          { endpoint: "EA flood-monitoring: floods", ok: floods.ok, code: floods.code, message: floods.error },
+          {
+            endpoint: "EA flood-monitoring: floods",
+            ok: floods.ok, code: floods.code, message: floods.error,
+            coverage: floods.data?.coverage ?? null,
+            // False for the EA feed: England only, so an empty list is not an all-clear.
+            authoritativeHere: floods.data?.authoritative ?? null,
+            inForce: floods.data?.warnings.length ?? 0,
+          },
           { endpoint: "EA flood-monitoring: stations + measures", ok: rivers.ok, code: rivers.code, message: rivers.error },
           { endpoint: "EA flood-monitoring: tide gauge", ok: tides.ok, code: tides.code, message: tides.error, via: tides.data?.via ?? null, readings: tides.data?.readings.length ?? 0 },
           { endpoint: "Defra/NRW bathing water quality", ok: bathing.ok, code: bathing.code, message: bathing.error, via: bathing.data?.[0]?.via ?? null, found: bathing.data?.length ?? 0 },
@@ -136,6 +147,7 @@ export async function GET(request: NextRequest) {
           {
             endpoint: `Met Office warnings (region ${regionFor(point.lat, point.lon).id})`,
             ok: warnings.ok, code: warnings.code, message: warnings.error,
+            via: warnings.data?.via ?? null,
             inForce: warnings.data?.warnings.length ?? 0,
           },
           { endpoint: "AuroraWatch UK", ok: aurora.ok, code: aurora.code, message: aurora.error, level: aurora.data?.level ?? null },
@@ -150,6 +162,18 @@ export async function GET(request: NextRequest) {
             ok: spread.ok, code: spread.code, message: spread.error,
             answered: spread.data?.models.map((m) => m.id) ?? [],
             missing: spread.data?.missing ?? null,
+          },
+          {
+            endpoint: `Open-Meteo ensemble (${ENSEMBLES.map((e) => e.id).join(", ")})`,
+            ok: ensemble.ok, code: ensemble.code, message: ensemble.error,
+            answered: ensemble.data?.model ?? null,
+            members: ensemble.data?.members ?? 0,
+          },
+          {
+            endpoint: "Open-Meteo archive (ERA5, 1940-)",
+            ok: climate.ok, code: climate.code, message: climate.error,
+            years: climate.data?.yearsCompared ?? 0,
+            through: climate.data?.lastDayISO ?? null,
           },
         ];
       })()

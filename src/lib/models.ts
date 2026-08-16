@@ -37,6 +37,15 @@ const TTL = 3_600;
  * that never do should be deleted rather than left to fail quietly.
  */
 export const MODELS: { id: string; label: string; centre: string }[] = [
+  /*
+   * UKV first: 2 km over the UK and Ireland, which is the finest grid anything
+   * in this app sees and the one most likely to resolve a Swansea Bay shower
+   * that a 10 km global model smears away. `ukmo_seamless` blends it with the
+   * global run; this is the raw high-resolution model beside it, so the two
+   * disagreeing is itself informative. The identifier is unverified — if
+   * diagnostics reports it missing every run, it is wrong and should go.
+   */
+  { id: "ukmo_uk_deterministic_2km", label: "UKV 2km", centre: "Met Office" },
   { id: "ukmo_seamless", label: "UKMO", centre: "Met Office" },
   { id: "ecmwf_ifs025", label: "ECMWF", centre: "ECMWF" },
   { id: "icon_seamless", label: "ICON", centre: "DWD" },

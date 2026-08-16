@@ -46,9 +46,9 @@ export function NowPanel({
   theme?: ThemeName;
 }) {
   const { sections, place } = overview;
-  const current = sections.current.data?.periods?.[0] ?? null;
-  const sun = sections.sunMoon.data?.sun ?? null;
-  const recentPeriods = sections.recent.data?.periods ?? [];
+  const current = sections.current?.data?.periods?.[0] ?? null;
+  const sun = sections.sunMoon?.data?.sun ?? null;
+  const recentPeriods = sections.recent?.data?.periods ?? [];
   const trend = pressureTrend(recentPeriods);
 
   const uv = uviCategory(current?.uvi);
@@ -60,7 +60,7 @@ export function NowPanel({
         * alerts block. They are the authoritative UK source and the only thing
         * on this page that should change what someone does today.
         */}
-      {sections.warnings.ok && sections.warnings.data && (
+      {sections.warnings?.ok && sections.warnings.data && (
         <WarningBanner
           region={sections.warnings.data.region}
           warnings={sections.warnings.data.warnings}
@@ -478,9 +478,9 @@ function NextRainCard({
   hour12: boolean;
 }) {
   const { sections } = overview;
-  const minutely = sections.minutely.data?.periods ?? [];
-  const hourly = sections.hourly.data?.periods ?? [];
-  const daily = sections.daily.data?.periods ?? [];
+  const minutely = sections.minutely?.data?.periods ?? [];
+  const hourly = sections.hourly?.data?.periods ?? [];
+  const daily = sections.daily?.data?.periods ?? [];
 
   if (
     minutely.length === 0 &&
@@ -639,7 +639,7 @@ function AlertsBlock({
   const [expanded, setExpanded] = useState<string | null>(null);
   const section = overview.sections.alerts;
 
-  if (!section.ok || !section.data || section.data.length === 0) return null;
+  if (!section?.ok || !section.data || section.data.length === 0) return null;
 
   return (
     <div className="space-y-2">
@@ -705,9 +705,9 @@ function MinutelyBlock({
   hour12: boolean;
 }) {
   const section = overview.sections.minutely;
-  const periods = section.data?.periods ?? [];
+  const periods = section?.data?.periods ?? [];
 
-  if (!section.ok || periods.length === 0) return null;
+  if (!section?.ok || periods.length === 0) return null;
 
   const rates = periods.map((p) =>
     units === "metric"
