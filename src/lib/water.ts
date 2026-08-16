@@ -241,6 +241,13 @@ interface RawStation {
   catchmentName?: string;
   lat?: number | number[];
   long?: number | number[];
+  /**
+   * The station listing sometimes carries its measures inline. When it does,
+   * the per-station `/measures` hop is redundant — which matters, because that
+   * hop is what limited the tide walk to a single gauge inside its deadline.
+   * Optional because it is not guaranteed; the walk falls back to the hop.
+   */
+  measures?: RawMeasure | RawMeasure[];
   stageScale?: {
     typicalRangeLow?: number;
     typicalRangeHigh?: number;
@@ -476,7 +483,18 @@ export async function getTideGauge(
    */
   const started = Date.now();
   const DEADLINE_MS = 8_000;
-  const left = () => Math.max(1_500, DEADLINE_MS - (Date.now() - started));
+  /*
+   * `left()` reports what is actually left, which can be zero. It used to be
+   * floored at 1,500 ms, and that floor was the reason the walk below never
+   * walked: the loop breaks when fewer than two requests fit, the floor meant
+   * `left()` never fell below 1,500, and 1,500 is under that threshold — so
+   * once the budget was genuinely spent the guard fired on the first pass and
+   * the report read "6 in range, tried 1". A budget that lies about being
+   * empty is worse than no budget. `spend()` is the clamped value to hand a
+   * request, and is the only place the floor belongs.
+   */
+  const left = () => Math.max(0, DEADLINE_MS - (Date.now() - started));
+  const spend = (cap: number) => Math.max(1_200, Math.min(cap, left()));
   const stage = <T>(section: Section<T>, what: string, ms: number): Section<T> =>
     section.ok
       ? section
@@ -515,6 +533,8 @@ export async function getTideGauge(
         label: str(firstOf(item.label)) ?? notation,
         distance:
           sLat !== null && sLon !== null ? distanceKM(lat, lon, sLat, sLon) : null,
+        // Present on some responses, absent on others — see RawStation.measures.
+        measures: toArray(item.measures),
       };
     })
     .filter((g) => g.notation)
@@ -539,104 +559,125 @@ export async function getTideGauge(
    * level measure had no rows for the last thirteen hours while six other
    * gauges sat unqueried in the same response.
    *
-   * So this walks outwards. A silent gauge is now a reason to ask the next one
-   * rather than to blank the card. This is not the fallback chain that caused
-   * the throttling: that tried several URL *shapes* against one station, where
-   * this makes the same proven request against a different station, and only
-   * while there is budget left to do it in.
+   * So this asks the nearest few *at once*. Sequentially it could not work: at
+   * roughly 1.9 s a request, one gauge costs three round trips including the
+   * station lookup, and reaching a second would exceed Netlify's 10 s ceiling.
+   * That is precisely what production reported — "6 in range, tried 1" — and no
+   * amount of budget arithmetic fixes an ordering that cannot fit.
+   *
+   * This is not the fallback chain that caused the throttling. That tried
+   * several URL *shapes* against one station in sequence, retrying after each
+   * failure; this makes the one proven request against a handful of distinct
+   * stations, exactly the shape `getRiverStations` above has been running in
+   * production throughout. The fan-out is bounded to keep it that way.
    */
   const since = new Date(Date.now() - 13 * 3600_000).toISOString().slice(0, 19) + "Z";
-  const tried: string[] = [];
-  let chosen: {
-    gauge: (typeof gauges)[number];
-    readings: TideReading[];
-    measureId: string;
-  } | null = null;
+  const FANOUT = 4;
+  const candidates = gauges.slice(0, FANOUT);
 
-  for (const gauge of gauges) {
-    // Two requests per gauge; stop while there is still time for both.
-    if (chosen || left() < 2_600) break;
+  const attempts = await Promise.all(
+    candidates.map(async (gauge) => {
+      const note = (why: string) => ({ gauge, readings: null, measureId: "", why });
 
-    const t1 = Date.now();
-    const measureSection = stage(
-      await getJSON<{ items?: RawMeasure | RawMeasure[] }>(
-        `${EA_BASE}/id/stations/${encodeURIComponent(gauge.notation)}/measures`,
-        TTL.readings,
-        {},
-        Math.min(2_500, left())
-      ),
-      `measure lookup for ${gauge.label}`,
-      Date.now() - t1
-    );
-    if (!measureSection.ok || !measureSection.data) {
-      tried.push(`${gauge.label}: ${measureSection.code ?? "lookup failed"}`);
-      continue;
-    }
+      let measures = gauge.measures;
+      if (measures.length === 0) {
+        const t1 = Date.now();
+        const measureSection = stage(
+          await getJSON<{ items?: RawMeasure | RawMeasure[] }>(
+            `${EA_BASE}/id/stations/${encodeURIComponent(gauge.notation)}/measures`,
+            TTL.readings,
+            {},
+            spend(3_000)
+          ),
+          `measure lookup for ${gauge.label}`,
+          Date.now() - t1
+        );
+        if (!measureSection.ok || !measureSection.data) {
+          return note(`${gauge.label}: ${measureSection.code ?? "lookup failed"}`);
+        }
+        measures = toArray(measureSection.data.items);
+      }
 
-    /*
-     * A tide gauge's series is a level. Match on the qualifier, then the unit,
-     * then the parameter — "Tidal Level" is not the only spelling in the feed
-     * (E72924 publishes `tidal_level-Mean-15_min-m`, in plain metres rather
-     * than mAOD), and an unmatched qualifier looks exactly like a silent gauge.
-     */
-    const measures = toArray(measureSection.data.items);
-    const tidal =
-      measures.find((m) => /tidal/i.test(str(m.qualifier) ?? "")) ??
-      measures.find((m) => /tidal/i.test(str(m["@id"]) ?? "")) ??
-      measures.find((m) => /mAOD/i.test(str(m.unitName) ?? "")) ??
-      measures.find((m) => str(m.parameter) === "level");
+      /*
+       * A tide gauge's series is a level. Match on the qualifier, then the
+       * unit, then the parameter — "Tidal Level" is not the only spelling in
+       * the feed (E72924 publishes `tidal_level-Mean-15_min-m`, in plain metres
+       * rather than mAOD), and an unmatched qualifier looks exactly like a
+       * silent gauge.
+       */
+      const tidal =
+        measures.find((m) => /tidal/i.test(str(m.qualifier) ?? "")) ??
+        measures.find((m) => /tidal/i.test(str(m["@id"]) ?? "")) ??
+        measures.find((m) => /mAOD/i.test(str(m.unitName) ?? "")) ??
+        measures.find((m) => str(m.parameter) === "level");
 
-    /*
-     * The feed's `@id` is an absolute http:// URI on the live host. Rebuilding
-     * it against EA_BASE keeps the request on https and lets the offline stub
-     * see it, rather than the test quietly reaching for the real service.
-     */
-    const measureName = (str(tidal?.["@id"]) ?? "").split("/id/measures/").pop() ?? "";
-    if (!measureName) {
-      tried.push(`${gauge.label}: no level measure`);
-      continue;
-    }
-    const measureId = `${EA_BASE}/id/measures/${encodeURIComponent(measureName)}`;
+      /*
+       * The feed's `@id` is an absolute http:// URI on the live host. Rebuilding
+       * it against EA_BASE keeps the request on https and lets the offline stub
+       * see it, rather than the test quietly reaching for the real service.
+       */
+      const measureName = (str(tidal?.["@id"]) ?? "").split("/id/measures/").pop() ?? "";
+      if (!measureName) return note(`${gauge.label}: no level measure`);
+      const measureId = `${EA_BASE}/id/measures/${encodeURIComponent(measureName)}`;
 
-    const t2 = Date.now();
-    const readingSection = stage(
-      await getJSON<{ items?: RawReading | RawReading[] }>(
-        /*
-         * The timestamp is *not* percent-encoded. `encodeURIComponent` turns
-         * the colons into %3A, and a colon is legal in a query value — an
-         * upstream that does not decode it sees a malformed date and answers
-         * with an empty list rather than an error, which is exactly the silent
-         * shape this has been returning.
-         */
-        `${measureId}/readings?since=${since}&_limit=60`,
-        TTL.readings,
-        {},
-        Math.max(1_500, left())
-      ),
-      `readings for ${gauge.label}`,
-      Date.now() - t2
-    );
-    if (!readingSection.ok) {
-      tried.push(`${gauge.label}: ${readingSection.code ?? "readings failed"}`);
-      continue;
-    }
+      const t2 = Date.now();
+      const readingSection = stage(
+        await getJSON<{ items?: RawReading | RawReading[] }>(
+          /*
+           * The timestamp is *not* percent-encoded. `encodeURIComponent` turns
+           * the colons into %3A, and a colon is legal in a query value — an
+           * upstream that does not decode it sees a malformed date and answers
+           * with an empty list rather than an error, which is exactly the silent
+           * shape this has been returning.
+           */
+          `${measureId}/readings?since=${since}&_limit=60`,
+          TTL.readings,
+          {},
+          spend(3_000)
+        ),
+        `readings for ${gauge.label}`,
+        Date.now() - t2
+      );
+      if (!readingSection.ok) {
+        return note(`${gauge.label}: ${readingSection.code ?? "readings failed"}`);
+      }
 
-    const rows = toArray(readingSection.data?.items).length;
-    const readings = parseReadings(readingSection.data?.items, offsetMinutes);
-    if (readings.length >= 4) {
-      chosen = { gauge, readings, measureId };
-      break;
-    }
-    tried.push(
-      rows === 0
-        ? `${gauge.label} (${gauge.notation}): no rows in 13h`
-        : `${gauge.label} (${gauge.notation}): ${rows} rows, ${readings.length} usable`
-    );
-  }
+      const rows = toArray(readingSection.data?.items).length;
+      const readings = parseReadings(readingSection.data?.items, offsetMinutes);
+      if (readings.length >= 4) return { gauge, readings, measureId, why: "" };
+
+      return note(
+        rows === 0
+          ? `${gauge.label} (${gauge.notation}): no rows in 13h`
+          : `${gauge.label} (${gauge.notation}): ${rows} rows, ${readings.length} usable`
+      );
+    })
+  );
+
+  /*
+   * Pick by distance, not by whoever replied first — `candidates` is already
+   * in distance order, so the first usable attempt is the nearest working
+   * gauge. Running them concurrently must not change which one wins.
+   */
+  const chosen =
+    attempts.find(
+      (a): a is { gauge: (typeof gauges)[number]; readings: TideReading[]; measureId: string; why: string } =>
+        a.readings !== null
+    ) ?? null;
+  const tried = attempts.filter((a) => a.readings === null).map((a) => a.why);
 
   if (!chosen) {
+    /*
+     * Say why the walk stopped where it did. "tried 1 of 6" with no further
+     * explanation was a dead end for a whole round — it looked like six silent
+     * gauges when it was one silent gauge and an exhausted budget.
+     */
+    const inline = candidates.filter((g) => g.measures.length > 0).length;
     return fail<TideGauge>(
-      `No tide gauge within range is reporting. ${found.length} in range, tried ${tried.length}: ${tried.join("; ")}.`,
+      `No tide gauge within range is reporting. ${found.length} in range, asked ` +
+        `${candidates.length} concurrently in ${Date.now() - started} ms of ` +
+        `${DEADLINE_MS} (${inline}/${candidates.length} listed their measures ` +
+        `inline): ${tried.join("; ")}.`,
       "warn_no_data"
     );
   }

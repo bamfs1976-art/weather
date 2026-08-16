@@ -158,9 +158,25 @@ function levelFromCap(severity: string | null, event: string | null): WarningLev
  * not a replacement, so anything unexpected falls through to the feed that was
  * already working instead of blanking the banner.
  */
+/**
+ * Why the CAP feed did or did not supply the warnings.
+ *
+ * An empty feed and a broken one both used to come back as `null`, which made
+ * them indistinguishable in the diagnostics report — "via: nswws-rss" could
+ * mean MeteoAlarm had nothing to say on a quiet day, or that the URL was wrong
+ * and had never once worked. Only the second is a fault, so the reason is
+ * carried out rather than discarded.
+ */
+export type CapReason =
+  | "ok"
+  | "unreachable"
+  | "not-xml"
+  | "no-entries"
+  | "none-for-region";
+
 async function fromMeteoAlarm(
   region: { id: string; name: string }
-): Promise<WeatherWarning[] | null> {
+): Promise<{ warnings: WeatherWarning[] | null; reason: CapReason }> {
   let body: string;
   try {
     const res = await fetch(METEOALARM, {
@@ -171,15 +187,16 @@ async function fromMeteoAlarm(
       },
       signal: AbortSignal.timeout(6_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { warnings: null, reason: "unreachable" };
     body = await res.text();
   } catch {
-    return null;
+    return { warnings: null, reason: "unreachable" };
   }
-  if (!/<feed|<entry/i.test(body)) return null;
+  if (!/<feed|<entry/i.test(body)) return { warnings: null, reason: "not-xml" };
 
+  const entries = body.split(/<entry[\s>]/i).slice(1);
   const out: WeatherWarning[] = [];
-  for (const raw of body.split(/<entry[\s>]/i).slice(1)) {
+  for (const raw of entries) {
     /*
      * The national feed covers every UK region, so entries are matched against
      * the region this location maps to. An entry naming no area at all is kept:
@@ -219,14 +236,26 @@ async function fromMeteoAlarm(
     });
   }
 
-  return out.length > 0 ? out : null;
+  if (out.length > 0) return { warnings: out, reason: "ok" };
+  // A feed that parsed but held nothing for here is working, just quiet.
+  return {
+    warnings: null,
+    reason: entries.length === 0 ? "no-entries" : "none-for-region",
+  };
 }
 
 export async function getWeatherWarnings(
   lat: number,
   lon: number
 ): Promise<
-  Section<{ region: string; regionId: string; via: string; warnings: WeatherWarning[] }>
+  Section<{
+    region: string;
+    regionId: string;
+    via: string;
+    /** Why CAP did or did not answer — see CapReason. Reported by diagnostics. */
+    capReason: CapReason;
+    warnings: WeatherWarning[];
+  }>
 > {
   const region = regionFor(lat, lon);
 
@@ -236,12 +265,18 @@ export async function getWeatherWarnings(
    * genuinely a fallback rather than the default.
    */
   const cap = await fromMeteoAlarm(region);
-  if (cap) {
+  if (cap.warnings) {
     const RANK: Record<WarningLevel, number> = { red: 0, amber: 1, yellow: 2, unknown: 3 };
-    cap.sort((a, b) => RANK[a.level] - RANK[b.level]);
+    cap.warnings.sort((a, b) => RANK[a.level] - RANK[b.level]);
     return {
       ok: true,
-      data: { region: region.name, regionId: region.id, via: "meteoalarm-cap", warnings: cap },
+      data: {
+        region: region.name,
+        regionId: region.id,
+        via: "meteoalarm-cap",
+        capReason: cap.reason,
+        warnings: cap.warnings,
+      },
       error: null,
       code: null,
     };
@@ -314,7 +349,13 @@ export async function getWeatherWarnings(
 
   return {
     ok: true,
-    data: { region: region.name, regionId: region.id, via: "nswws-rss", warnings },
+    data: {
+      region: region.name,
+      regionId: region.id,
+      via: "nswws-rss",
+      capReason: cap.reason,
+      warnings,
+    },
     error: null,
     code: null,
   };

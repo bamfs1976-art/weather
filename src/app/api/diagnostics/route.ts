@@ -143,11 +143,27 @@ export async function GET(request: NextRequest) {
           { endpoint: "Open-Meteo Marine", ok: marine.ok, code: marine.code, message: marine.error },
           { endpoint: "Open-Meteo air quality (pollen)", ok: pollen.ok, code: pollen.code, message: pollen.error },
           { endpoint: "Met Office DataHub (site specific)", ok: metoffice.ok, code: metoffice.code, message: metoffice.error },
-          { endpoint: "MET Norway locationforecast", ok: metno.ok, code: metno.code, message: metno.error, hours: metno.data?.hours.length ?? 0 },
+          {
+            endpoint: "MET Norway locationforecast",
+            ok: metno.ok, code: metno.code, message: metno.error,
+            /*
+             * This probe asks for 6 hours to stay cheap; the overview asks for
+             * 48. Labelled because a bare "hours: 6" in the report reads as a
+             * short forecast rather than a short *request*, and cost a round.
+             */
+            hoursRequested: 6,
+            hoursReturned: metno.data?.hours.length ?? 0,
+          },
           {
             endpoint: `Met Office warnings (region ${regionFor(point.lat, point.lon).id})`,
             ok: warnings.ok, code: warnings.code, message: warnings.error,
             via: warnings.data?.via ?? null,
+            /*
+             * Distinguishes "MeteoAlarm had nothing for this region today",
+             * which is fine, from "MeteoAlarm is unreachable", which is a
+             * fault the RSS fallback would otherwise hide indefinitely.
+             */
+            capReason: warnings.data?.capReason ?? null,
             inForce: warnings.data?.warnings.length ?? 0,
           },
           { endpoint: "AuroraWatch UK", ok: aurora.ok, code: aurora.code, message: aurora.error, level: aurora.data?.level ?? null },

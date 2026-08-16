@@ -232,6 +232,12 @@ Six more upstreams, none of which needs a key or registration. All return
   filtered by `cap:areaDesc` against the region name, and **an entry with no
   area at all is kept** — UK-wide warnings carry no area, and dropping them
   would discard the most important ones.
+- **`capReason` says why CAP lost, because `via` alone cannot.** An empty feed
+  and an unreachable one both fell back to the RSS and both reported
+  `via: "nswws-rss"`, so a wrong URL would have looked exactly like a quiet day
+  and could have gone unnoticed indefinitely. The reason separates `ok` /
+  `unreachable` / `not-xml` / `no-entries` / `none-for-region`, and diagnostics
+  reports it. Only `unreachable` and `not-xml` are faults.
 - **The RSS fallback is a public cache, not an API.**
   `…/PWSCache/WarningsRSS/Region/{id}` is what Home Assistant and
   MMM-UKMOWeatherWarnings read, so it is well-trodden, but it has no
@@ -352,13 +358,28 @@ card and nothing else. All are covered by `/api/diagnostics`.
   merely slow lookup guaranteed the readings query was killed and blamed. The
   messages now carry the station, its distance, the measure URI and the raw row
   count — "no readings" was a dead end three rounds running.
-- **The tide fetch walks outwards through the gauges.** Mumbles (E72924) came
-  back with no rows for thirteen hours while six other gauges sat unqueried in
-  the same response, so a silent gauge is now a reason to ask the next one, not
-  to blank the card. Bounded by the remaining budget rather than a fixed count.
-  This is **not** the fallback chain that caused the throttling: that tried
-  several URL *shapes* against one station; this makes the same proven request
-  against a different station.
+- **The tide fetch asks the nearest four gauges concurrently, and must.**
+  Mumbles (E72924) came back with no rows for thirteen hours while six other
+  gauges sat unqueried, so a silent gauge is a reason to ask another rather than
+  to blank the card. The first attempt walked them *sequentially* under a budget
+  and production reported `6 in range, tried 1` — because at ~1.9 s a request one
+  gauge costs three round trips including the station lookup, so a second could
+  never fit under Netlify's 10 s ceiling. **No budget arithmetic fixes an
+  ordering that cannot fit**; a stub at that latency reproduces the exact live
+  message, and is the regression test. This is **not** the fallback chain that
+  caused the throttling: that retried several URL *shapes* against one station
+  in sequence, where this makes the one proven request against four distinct
+  stations — the same shape `getRiverStations` has run in production throughout.
+  The fan-out is bounded to keep it that way.
+- **Concurrency must not change which gauge wins.** The candidates are in
+  distance order and the winner is the first usable *attempt*, not the first
+  reply — otherwise the nearest gauge would quietly lose to whichever responded
+  fastest.
+- **`left()` reports the real remaining budget, including zero.** It used to be
+  floored at 1,500 ms, which made the "is there time for another gauge?" guard
+  self-defeating: the guard needed more than 1,500 ms, and the floor guaranteed
+  it never saw less. A budget that cannot report being empty is worse than no
+  budget. `spend()` is where the per-request floor belongs.
 - **Do not percent-encode the `since` timestamp.** A colon is legal in a query
   value, and an upstream that does not decode `%3A` sees a malformed date and
   answers with an empty list rather than an error — indistinguishable from a
