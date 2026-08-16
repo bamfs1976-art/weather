@@ -249,6 +249,30 @@ Four more upstreams, none of which needs a key or registration. All return
   forecast being right.
 - **AuroraWatch ask for three minutes between requests**; the cache is ten.
 
+## The Met Office tab
+
+`MetOfficePanel` is everything that provider publishes for the location: the
+NSWWS warnings in full, the site-specific forecast with feels-like, gusts,
+humidity, visibility, pressure and UV per hour, a 48-hour chart, and the
+comparison against Xweather.
+
+The compact "second opinion" on Now and Hourly stays exactly where it was. The
+two answer different questions — "do they agree?" belongs beside the number it
+qualifies, and none of the extra fields fit in a two-provider diff.
+
+- **Absolutely positioned descendants escape a horizontal scroller.** The hour
+  strip uses `sr-only` `<dt>` labels, and with no positioned ancestor they
+  resolve against the initial containing block — their static position sits at
+  the far end of a 5,000px strip, which dragged the document's scroll width out
+  with it and put **4911px of horizontal overflow** on the page at 390px. The
+  scroller clipped the visible columns perfectly the whole time; `overflow-x`
+  does not contain an absolutely positioned child. `position: relative` on each
+  column fixes it, and is why the day/night strip on 10-day never had the
+  problem — it has no `sr-only` inside.
+- Diagnose this class of bug by bisecting, not by reading CSS: hide each card in
+  turn and re-measure `documentElement.scrollWidth`. Three plausible theories
+  were wrong before that named the right element in one pass.
+
 ## Source attribution
 
 `Card` takes a `source` prop that renders a hairline-separated line at the
