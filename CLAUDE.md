@@ -242,6 +242,20 @@ Six more upstreams, none of which needs a key or registration. All return
   means egress is blocked and no URL will help — so they are reported
   separately rather than flattened into one "unreachable", which is exactly the
   mistake the `via` field made one level up.
+- **MeteoAlarm needs a permissive `Accept`, and 406 was how it said so.**
+  Production reported `http-406` — Not Acceptable — against
+  `application/atom+xml, application/xml, text/xml`. That status is
+  unambiguous: the URL exists and egress works, and content negotiation was
+  what refused us, not the address. Sending `Accept: */*` is the fix, and it
+  costs nothing because the body is sniffed for feed markup regardless — a
+  wrong content type still fails as `not-xml`. **Do not narrow this header
+  again**; had the reason still read `unreachable`, the natural next move would
+  have been to go hunting for a new URL that was never wrong.
+- **Report every candidate's outcome, not just the last.** The first version of
+  the loop overwrote `reason` each pass, so a run reporting `http-406` gave no
+  way to tell whether the other feeds agreed or failed differently — the exact
+  mistake `capReason` exists to prevent, repeated one level further in. The
+  reasons are joined (`"http-406; http-404; network"`) when all candidates fail.
 - **`METEOALARM_FEEDS` is an ordered candidate list, first that answers wins**,
   the same reasoning as `MODELS` and `ENSEMBLES`: production reported the single
   hard-coded URL unreachable and no build environment here can reach MeteoAlarm

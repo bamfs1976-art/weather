@@ -205,7 +205,16 @@ async function fetchCapFeed(
     const res = await fetch(url, {
       next: { revalidate: TTL },
       headers: {
-        Accept: "application/atom+xml, application/xml, text/xml",
+        /*
+         * Accept anything, because a narrow Accept list is what was actually
+         * wrong. Production reported `http-406` — Not Acceptable — which says
+         * the URL exists and egress works, and that the server could not
+         * produce any of `application/atom+xml, application/xml, text/xml`.
+         * Content negotiation was rejecting us, not the address. The body is
+         * sniffed for feed markup below either way, so accepting anything
+         * costs nothing: a wrong content type still fails as `not-xml`.
+         */
+        Accept: "*/*",
         "User-Agent": "swanseaweather/1.0 (+https://swanseaweather.netlify.app)",
       },
       signal: AbortSignal.timeout(6_000),
@@ -234,18 +243,32 @@ async function fromMeteoAlarm(
 ): Promise<{ warnings: WeatherWarning[] | null; reason: CapReason; feed: string | null }> {
   let body: string | null = null;
   let feed: string | null = null;
-  let reason: CapReason = "network";
+  /*
+   * Every candidate's outcome, not just the last one's. The first version
+   * overwrote `reason` each pass, so production reported `http-406` and there
+   * was no way to know whether the other two feeds had said the same thing or
+   * something completely different — the identical mistake this whole field
+   * exists to stop, made one level further in.
+   */
+  const attempts: { url: string; reason: CapReason }[] = [];
 
   for (const url of METEOALARM_FEEDS) {
     const attempt = await fetchCapFeed(url);
-    reason = attempt.reason;
+    attempts.push({ url, reason: attempt.reason });
     if (attempt.body !== null) {
       body = attempt.body;
       feed = url;
       break;
     }
   }
-  if (body === null) return { warnings: null, reason, feed: null };
+  if (body === null) {
+    return {
+      warnings: null,
+      // Every candidate failed, so name each one: "http-406; http-404; network".
+      reason: (attempts.map((a) => a.reason).join("; ") || "network") as CapReason,
+      feed: null,
+    };
+  }
 
   const entries = body.split(/<entry[\s>]|<item[\s>]/i).slice(1);
   const out: WeatherWarning[] = [];
