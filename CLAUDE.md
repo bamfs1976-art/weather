@@ -236,8 +236,18 @@ Six more upstreams, none of which needs a key or registration. All return
   and an unreachable one both fell back to the RSS and both reported
   `via: "nswws-rss"`, so a wrong URL would have looked exactly like a quiet day
   and could have gone unnoticed indefinitely. The reason separates `ok` /
-  `unreachable` / `not-xml` / `no-entries` / `none-for-region`, and diagnostics
-  reports it. Only `unreachable` and `not-xml` are faults.
+  `http-<status>` / `network` / `timeout` / `not-xml` / `no-entries` /
+  `none-for-region`. **A status and a connection failure are not the same
+  finding** — a 404 means the feed moved and the URL is fixable, a `network`
+  means egress is blocked and no URL will help — so they are reported
+  separately rather than flattened into one "unreachable", which is exactly the
+  mistake the `via` field made one level up.
+- **`METEOALARM_FEEDS` is an ordered candidate list, first that answers wins**,
+  the same reasoning as `MODELS` and `ENSEMBLES`: production reported the single
+  hard-coded URL unreachable and no build environment here can reach MeteoAlarm
+  to tell a renamed feed from a blocked one. Guessing a replacement would only
+  swap one unverified URL for another. `capFeed` reports which one answered —
+  **keep that one and delete any entry permanently reported `http-404`.**
 - **The RSS fallback is a public cache, not an API.**
   `…/PWSCache/WarningsRSS/Region/{id}` is what Home Assistant and
   MMM-UKMOWeatherWarnings read, so it is well-trodden, but it has no
@@ -375,6 +385,13 @@ card and nothing else. All are covered by `/api/diagnostics`.
   distance order and the winner is the first usable *attempt*, not the first
   reply — otherwise the nearest gauge would quietly lose to whichever responded
   fastest.
+- **Station geography is not a reading, and must not share its TTL.** The tide
+  gauge listing was cached for ten minutes behind a 4 s cap, so a slow day at the
+  Environment Agency timed the lookup out at 4,002 ms having asked no gauge at
+  all — the concurrency fix underneath it never got a chance to run. Which
+  gauges exist near a point changes when the EA commissions a station, so it is
+  cached for a day (`TTL.stations`) and given a budget that reflects being the
+  gate for everything after it.
 - **`left()` reports the real remaining budget, including zero.** It used to be
   floored at 1,500 ms, which made the "is there time for another gauge?" guard
   self-defeating: the guard needed more than 1,500 ms, and the floor guaranteed

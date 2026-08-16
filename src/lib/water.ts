@@ -43,6 +43,15 @@ const TTL = {
   floods: 300,
   readings: 600,
   marine: 1_800,
+  /*
+   * Which gauges exist near a point, and where they are, is geography — it
+   * changes when the Environment Agency commissions a station, not every ten
+   * minutes. It was sharing the `readings` TTL, which meant a 4 s cap on a
+   * cold lookup stood between the tide card and every one of its gauges: one
+   * slow day at the EA and the card reported a timeout having asked nothing.
+   * Caching the list for a day makes that lookup almost never run.
+   */
+  stations: 86_400,
   // Samples are weekly in season and the annual class changes once a year,
   // so this is the one feed where a long cache costs nothing.
   bathing: 21_600,
@@ -304,6 +313,7 @@ export async function getRiverStations(
   limit = 3,
   offsetMinutes: number | null = null
 ): Promise<Section<RiverStation[]>> {
+  // Station geography, not readings — see TTL.stations.
   const url = `${EA_BASE}/id/stations?lat=${lat}&long=${lon}&dist=${distKm}&parameter=level&_limit=20`;
   const section = await getJSON<{ items?: RawStation | RawStation[] }>(
     url,
@@ -510,9 +520,15 @@ export async function getTideGauge(
   const stationSection = stage(
     await getJSON<{ items?: RawStation | RawStation[] }>(
       `${EA_BASE}/id/stations?type=TideGauge&lat=${lat}&long=${lon}&dist=${distKm}&_limit=10`,
-      TTL.readings,
+      TTL.stations,
       {},
-      4_000
+      /*
+       * Generous, because nothing else can run until it answers and a cold
+       * miss now happens roughly once a day rather than every ten minutes.
+       * Production timed this out at exactly 4,002 ms having asked no gauge
+       * at all, which is the worst possible way to spend the budget.
+       */
+      spend(5_500)
     ),
     "tide gauge lookup",
     Date.now() - t0

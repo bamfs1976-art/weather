@@ -164,6 +164,9 @@ export async function GET(request: NextRequest) {
              * fault the RSS fallback would otherwise hide indefinitely.
              */
             capReason: warnings.data?.capReason ?? null,
+            /* Which candidate URL answered, so a working one can be kept and
+               the dead ones deleted from METEOALARM_FEEDS. */
+            capFeed: warnings.data?.capFeed ?? null,
             inForce: warnings.data?.warnings.length ?? 0,
           },
           { endpoint: "AuroraWatch UK", ok: aurora.ok, code: aurora.code, message: aurora.error, level: aurora.data?.level ?? null },

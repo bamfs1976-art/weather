@@ -38,9 +38,28 @@ const BASE =
  * when MeteoAlarm answers its entries are filtered to the region by areaDesc.
  * https://feeds.meteoalarm.org/
  */
-const METEOALARM =
-  process.env.METEOALARM_BASE ??
-  "https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-united-kingdom";
+/*
+ * An ordered candidate list, first that answers wins — the same reasoning as
+ * `MODELS` and `ENSEMBLES`. Production reported the single hard-coded URL as
+ * unreachable, and from a build environment that cannot reach MeteoAlarm there
+ * is no way to tell a renamed feed from a blocked one by inspection. Guessing a
+ * replacement outright would just swap one unverified URL for another; trying
+ * the documented shapes in order costs one extra request on the failing path
+ * and makes the answer show up in diagnostics, which is where the last four
+ * upstream mysteries were actually settled.
+ *
+ * Delete any entry that is permanently reported as `http-404`; keep whichever
+ * one answers. METEOALARM_BASE overrides the list entirely, for tests.
+ */
+const METEOALARM_FEEDS: string[] = process.env.METEOALARM_BASE
+  ? // Comma-separated, so the fall-through itself is testable rather than only
+    // the single-URL case. Blank entries are dropped rather than fetched.
+    process.env.METEOALARM_BASE.split(",").map((u) => u.trim()).filter(Boolean)
+  : [
+      "https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-united-kingdom",
+      "https://feeds.meteoalarm.org/api/v1/warnings/feeds-united-kingdom",
+      "https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-rss-united-kingdom",
+    ];
 
 /** Warnings change slowly and are issued hours ahead; ten minutes is plenty. */
 const TTL = 600;
@@ -169,17 +188,21 @@ function levelFromCap(severity: string | null, event: string | null): WarningLev
  */
 export type CapReason =
   | "ok"
-  | "unreachable"
+  /** The request completed and the feed said no: `http-404`, `http-403`, … */
+  | `http-${number}`
+  /** DNS, TLS, connection refused, or an egress policy. */
+  | "network"
+  | "timeout"
   | "not-xml"
   | "no-entries"
   | "none-for-region";
 
-async function fromMeteoAlarm(
-  region: { id: string; name: string }
-): Promise<{ warnings: WeatherWarning[] | null; reason: CapReason }> {
-  let body: string;
+/** Fetch one candidate feed. Returns the body, or why it could not be used. */
+async function fetchCapFeed(
+  url: string
+): Promise<{ body: string; reason: CapReason } | { body: null; reason: CapReason }> {
   try {
-    const res = await fetch(METEOALARM, {
+    const res = await fetch(url, {
       next: { revalidate: TTL },
       headers: {
         Accept: "application/atom+xml, application/xml, text/xml",
@@ -187,14 +210,44 @@ async function fromMeteoAlarm(
       },
       signal: AbortSignal.timeout(6_000),
     });
-    if (!res.ok) return { warnings: null, reason: "unreachable" };
-    body = await res.text();
-  } catch {
-    return { warnings: null, reason: "unreachable" };
+    /*
+     * A refusal and a wrong address are different problems and only one of
+     * them is fixable by changing the URL, so the status is carried out rather
+     * than flattened. Production reported `unreachable`, which was true and
+     * useless — it could equally have been a 404 from a renamed feed or an
+     * egress policy on the host, and those call for opposite responses.
+     */
+    if (!res.ok) return { body: null, reason: `http-${res.status}` as CapReason };
+    const body = await res.text();
+    /* CAP entries may arrive as Atom <entry> or as RSS <item>. */
+    if (!/<feed|<entry|<item/i.test(body)) return { body: null, reason: "not-xml" };
+    return { body, reason: "ok" };
+  } catch (err) {
+    const timedOut =
+      err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+    return { body: null, reason: timedOut ? "timeout" : "network" };
   }
-  if (!/<feed|<entry/i.test(body)) return { warnings: null, reason: "not-xml" };
+}
 
-  const entries = body.split(/<entry[\s>]/i).slice(1);
+async function fromMeteoAlarm(
+  region: { id: string; name: string }
+): Promise<{ warnings: WeatherWarning[] | null; reason: CapReason; feed: string | null }> {
+  let body: string | null = null;
+  let feed: string | null = null;
+  let reason: CapReason = "network";
+
+  for (const url of METEOALARM_FEEDS) {
+    const attempt = await fetchCapFeed(url);
+    reason = attempt.reason;
+    if (attempt.body !== null) {
+      body = attempt.body;
+      feed = url;
+      break;
+    }
+  }
+  if (body === null) return { warnings: null, reason, feed: null };
+
+  const entries = body.split(/<entry[\s>]|<item[\s>]/i).slice(1);
   const out: WeatherWarning[] = [];
   for (const raw of entries) {
     /*
@@ -236,11 +289,12 @@ async function fromMeteoAlarm(
     });
   }
 
-  if (out.length > 0) return { warnings: out, reason: "ok" };
+  if (out.length > 0) return { warnings: out, reason: "ok", feed };
   // A feed that parsed but held nothing for here is working, just quiet.
   return {
     warnings: null,
     reason: entries.length === 0 ? "no-entries" : "none-for-region",
+    feed,
   };
 }
 
@@ -254,6 +308,8 @@ export async function getWeatherWarnings(
     via: string;
     /** Why CAP did or did not answer — see CapReason. Reported by diagnostics. */
     capReason: CapReason;
+    /** Which candidate feed answered, so a working URL can be kept. */
+    capFeed: string | null;
     warnings: WeatherWarning[];
   }>
 > {
@@ -275,6 +331,7 @@ export async function getWeatherWarnings(
         regionId: region.id,
         via: "meteoalarm-cap",
         capReason: cap.reason,
+        capFeed: cap.feed,
         warnings: cap.warnings,
       },
       error: null,
@@ -354,6 +411,7 @@ export async function getWeatherWarnings(
       regionId: region.id,
       via: "nswws-rss",
       capReason: cap.reason,
+      capFeed: cap.feed,
       warnings,
     },
     error: null,
