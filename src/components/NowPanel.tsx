@@ -30,6 +30,7 @@ import {
   relativeFromNow,
   uviCategory,
   windDescription,
+  leadForecast,
 } from "@/lib/weather-format";
 import type { ConditionKind } from "@/lib/weather-format";
 import type { ThemeName, UnitSystem, WeatherOverview } from "@/lib/weather-types";
@@ -46,7 +47,8 @@ export function NowPanel({
   theme?: ThemeName;
 }) {
   const { sections, place } = overview;
-  const current = sections.current?.data?.periods?.[0] ?? null;
+  const lead = leadForecast(sections);
+  const current = lead.current;
   const sun = sections.sunMoon?.data?.sun ?? null;
   const recentPeriods = sections.recent?.data?.periods ?? [];
   const trend = pressureTrend(recentPeriods);

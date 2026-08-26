@@ -20,6 +20,7 @@ import {
   isNum,
   pickUnit,
   tempValue,
+  leadForecast,
 } from "@/lib/weather-format";
 import type { UnitSystem, WeatherOverview, WeatherPeriod } from "@/lib/weather-types";
 
@@ -33,6 +34,15 @@ export function ForecastPanel({
   hour12: boolean;
 }) {
   const [openDay, setOpenDay] = useState<number | null>(0);
+  /* Met Office days when it answered, Xweather's when it did not. */
+  const lead = leadForecast(overview.sections);
+  const dailySection = lead.dailySection;
+  /*
+   * Which forecaster is on screen, not which one this card was written for.
+   * With nine upstreams in play a card showing a temperature without saying
+   * whose it is makes the disagreements look like a bug.
+   */
+  const leadSource = lead.source === "Met Office" ? "Met Office DataHub" : "Vaisala Xweather";
 
   return (
     <div className="space-y-4">
@@ -42,9 +52,9 @@ export function ForecastPanel({
       <Card
         title="10-day outlook"
         subtitle="Daily highs, lows and precipitation"
-        source="Vaisala Xweather"
+        source={leadSource}
       >
-        <SectionBody section={overview.sections.daily}>
+        <SectionBody section={dailySection}>
           {(data) => {
             const periods = data.periods ?? [];
             return (
@@ -88,8 +98,12 @@ export function ForecastPanel({
         </SectionBody>
       </Card>
 
-      <Card title="Daily detail" subtitle="Select a day for the full breakdown">
-        <SectionBody section={overview.sections.daily}>
+      <Card
+        title="Daily detail"
+        subtitle="Select a day for the full breakdown"
+        source={leadSource}
+      >
+        <SectionBody section={dailySection}>
           {(data) => {
             const periods = data.periods ?? [];
             const highs = periods
@@ -176,6 +190,7 @@ export function ForecastPanel({
       <Card
         title="Day & night periods"
         subtitle="Separate daytime and overnight forecasts, the way a broadcast reads them"
+        source="Vaisala Xweather"
       >
         <SectionBody section={overview.sections.dayNight}>
           {(data) => (

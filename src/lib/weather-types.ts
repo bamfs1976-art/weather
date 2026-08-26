@@ -1,4 +1,4 @@
-import type { MetOfficeForecast } from "./metoffice-types";
+import type { MetOfficeDaily, MetOfficeForecast } from "./metoffice-types";
 import type { MetNoForecast } from "./metno-types";
 import type { ModelSpread } from "./model-types";
 import type { EnsembleForecast } from "./ensemble-types";
@@ -396,6 +396,30 @@ export interface WeatherOverview {
     pollen: Section<PollenForecast>;
     /** Met Office site-specific forecast, carried for comparison. */
     metoffice: Section<MetOfficeForecast>;
+    /** Met Office site-specific daily forecast, behind the 10-day tab. */
+    metofficeDaily: Section<MetOfficeDaily>;
+    /**
+     * The forecast the dashboard leads with, already in the app's own shape.
+     *
+     * The Met Office is the authoritative forecaster for the UK and this is a
+     * UK dashboard, so its numbers are the ones on the front of the page and
+     * Xweather's became the second opinion rather than the source. The
+     * conversion happens on the server (`metoffice-periods.ts`) so the panels
+     * still read one shape and never learn there were two providers.
+     *
+     * A failed section here is not an error state: it means the panels fall
+     * back to the Xweather sections below, which is exactly what they used to
+     * render. `source` says which is on screen so a card can attribute it.
+     */
+    primary: Section<{
+      source: "metoffice";
+      siteName: string | null;
+      distanceKM: number | null;
+      modelRunISO: string | null;
+      current: WeatherPeriod | null;
+      hourly: WeatherPeriod[];
+      daily: WeatherPeriod[];
+    }>;
     /** MET Norway, the third forecast in the comparison. */
     metno: Section<MetNoForecast>;
     /** Met Office NSWWS severe weather warnings for the location's region. */

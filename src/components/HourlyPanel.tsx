@@ -17,6 +17,7 @@ import {
   formatTemp,
   formatWeekday,
   isNum,
+  leadForecast,
 } from "@/lib/weather-format";
 import type { UnitSystem, WeatherOverview, WeatherPeriod } from "@/lib/weather-types";
 import { ForecastComparison } from "./ForecastComparison";
@@ -43,6 +44,10 @@ export function HourlyPanel({
 }) {
   const [metric, setMetric] = useState<Metric>("temp");
   const [expanded, setExpanded] = useState<number | null>(null);
+  /* Met Office hours when it answered, Xweather's when it did not. */
+  const lead = leadForecast(overview.sections);
+  const hourlySection = lead.hourlySection;
+  const leadSource = lead.source === "Met Office" ? "Met Office DataHub" : "Vaisala Xweather";
 
   return (
     <div className="space-y-4">
@@ -51,6 +56,7 @@ export function HourlyPanel({
       <Card
         title="Next 48 hours"
         subtitle="Hourly forecast — tap a chart column for exact values"
+        source={leadSource}
         action={
           <div className="wx-scroll flex gap-1 pb-1">
             {METRICS.map((option) => (
@@ -68,7 +74,7 @@ export function HourlyPanel({
           </div>
         }
       >
-        <SectionBody section={overview.sections.hourly}>
+        <SectionBody section={hourlySection}>
           {(data) => {
             const periods = data.periods ?? [];
             const labels = periods.map((p) =>
@@ -86,8 +92,12 @@ export function HourlyPanel({
         </SectionBody>
       </Card>
 
-      <Card title="Hour by hour" subtitle="Every field the forecast provides">
-        <SectionBody section={overview.sections.hourly}>
+      <Card
+        title="Hour by hour"
+        subtitle="Every field the forecast provides"
+        source={leadSource}
+      >
+        <SectionBody section={hourlySection}>
           {(data) => {
             const periods = data.periods ?? [];
             return (
@@ -129,9 +139,9 @@ export function HourlyPanel({
         </SectionBody>
 
         {expanded !== null &&
-          overview.sections.hourly?.data?.periods?.[expanded] && (
+          hourlySection?.data?.periods?.[expanded] && (
             <HourDetail
-              period={overview.sections.hourly?.data.periods[expanded]}
+              period={hourlySection?.data?.periods[expanded]}
               units={units}
               hour12={hour12}
               onClose={() => setExpanded(null)}

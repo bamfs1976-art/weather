@@ -5,6 +5,8 @@ import {
   probeMapStack,
   resolvePlace,
   xwFetch,
+  breakerState,
+  resetBreaker,
 } from "@/lib/xweather";
 import {
   getBathingWaters,
@@ -14,7 +16,7 @@ import {
   getTideGauge,
 } from "@/lib/water";
 import { getPollen } from "@/lib/pollen";
-import { getMetOfficeHourly } from "@/lib/metoffice";
+import { getMetOfficeDaily, getMetOfficeHourly } from "@/lib/metoffice";
 import { getMetNoForecast } from "@/lib/metno";
 import { getWeatherWarnings, regionFor } from "@/lib/warnings";
 import { getAuroraStatus } from "@/lib/aurora";
@@ -33,14 +35,32 @@ import {
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/diagnostics?p=<location>
+ * GET /api/diagnostics?p=<location>[&maps=1]
  *
  * Calls every Xweather endpoint the app uses and reports which ones answered.
  * Xweather gates data sets by subscription tier, so this is the quickest way to
  * see what your key actually unlocks before wondering why a card is empty.
+ *
+ * **The raster probes are off by default, because this route was the single
+ * most expensive thing on the site.** A full run costs about sixty-six
+ * accesses — eighteen endpoint checks deliberately made with `revalidate: 0`,
+ * plus thirty-seven per-layer probes and ten stack probes, each of which is a
+ * map image and therefore its own access. Forty-seven of those sixty-six are
+ * raster, and they answer a question ("do the layer tokens still resolve?")
+ * that is asked once after changing a token and never again. Reaching for this
+ * route is the correct instinct whenever a card looks wrong; paying for the
+ * map probes every time that instinct fires is not. `?maps=1` runs them.
  */
 export async function GET(request: NextRequest) {
   const place = request.nextUrl.searchParams.get("p")?.trim() || "51.6656,-3.9333";
+  const probeMaps = request.nextUrl.searchParams.get("maps") === "1";
+
+  /*
+   * Always measure, never report a cached verdict. If a previous request tripped
+   * the key-level breaker, this route's whole purpose is to find out whether
+   * that is still true.
+   */
+  resetBreaker();
 
   if (!hasCredentials()) {
     return NextResponse.json(
@@ -112,11 +132,12 @@ export async function GET(request: NextRequest) {
          * three fallback URLs. Firing four EA requests at once here recreates
          * it, so diagnostics has been reporting a fault of its own making.
          */
-        const [marine, pollen, metoffice, metno, warnings, aurora, spread, ensemble, climate] =
+        const [marine, pollen, metoffice, metofficeDaily, metno, warnings, aurora, spread, ensemble, climate] =
           await Promise.all([
             getMarineConditions(point.lat, point.lon),
             getPollen(point.lat, point.lon),
             getMetOfficeHourly(point.lat, point.lon),
+            getMetOfficeDaily(point.lat, point.lon),
             getMetNoForecast(point.lat, point.lon, 6),
             getWeatherWarnings(point.lat, point.lon),
             getAuroraStatus(),
@@ -142,7 +163,32 @@ export async function GET(request: NextRequest) {
           { endpoint: "Defra/NRW bathing water quality", ok: bathing.ok, code: bathing.code, message: bathing.error, via: bathing.data?.[0]?.via ?? null, found: bathing.data?.length ?? 0 },
           { endpoint: "Open-Meteo Marine", ok: marine.ok, code: marine.code, message: marine.error },
           { endpoint: "Open-Meteo air quality (pollen)", ok: pollen.ok, code: pollen.code, message: pollen.error },
-          { endpoint: "Met Office DataHub (site specific)", ok: metoffice.ok, code: metoffice.code, message: metoffice.error },
+          {
+            endpoint: "Met Office DataHub (site specific, hourly)",
+            ok: metoffice.ok, code: metoffice.code, message: metoffice.error,
+            /*
+             * This is the app's primary forecast now, so the count matters as
+             * much as the status: a successful request that parsed no hours
+             * would leave the whole front of the dashboard quietly falling
+             * back to Xweather, which is the failure this line exists to name.
+             */
+            hours: metoffice.data?.hours.length ?? 0,
+            site: metoffice.data?.siteName ?? null,
+          },
+          {
+            endpoint: "Met Office DataHub (site specific, daily)",
+            ok: metofficeDaily.ok, code: metofficeDaily.code, message: metofficeDaily.error,
+            days: metofficeDaily.data?.days.length ?? 0,
+            /*
+             * The daily field names could not be verified from the build
+             * environment, so a request that succeeded while every value came
+             * back null is the specific thing to watch for — that is a wrong
+             * field name, not a wrong path. Counting the days that carry a
+             * temperature separates the two without needing the raw body.
+             */
+            daysWithTemp:
+              metofficeDaily.data?.days.filter((d) => d.maxTempC !== null).length ?? 0,
+          },
           {
             endpoint: "MET Norway locationforecast",
             ok: metno.ok, code: metno.code, message: metno.error,
@@ -227,7 +273,7 @@ export async function GET(request: NextRequest) {
    * finished and cannot have starved them.
    */
   const maps: Awaited<ReturnType<typeof probeMapLayer>>[] = [];
-  if (point) {
+  if (point && probeMaps) {
     for (let i = 0; i < MAP_LAYERS.length; i += 6) {
       maps.push(
         ...(await Promise.all(
@@ -248,7 +294,7 @@ export async function GET(request: NextRequest) {
    * pictures are fine and the fault is in displaying them.
    */
   const stackViews = ["radar-global", "satellite-geocolor", "temperatures", "maritime-sst"];
-  const mapStacks = point
+  const mapStacks = point && probeMaps
     ? await Promise.all([
         ...stackViews.map((view) =>
           probeMapStack(
@@ -288,7 +334,7 @@ export async function GET(request: NextRequest) {
    * collapsing them, and the browser was never at fault.
    */
   const origin = new URL(request.url).origin;
-  const routeStacks = point
+  const routeStacks = point && probeMaps
     ? await Promise.all(
         [...stackViews.map((view) => ({ view, zoom: 7 })), { view: "radar-global", zoom: 9 }].map(
           async ({ view, zoom }) => {
@@ -344,10 +390,20 @@ export async function GET(request: NextRequest) {
       available: all.filter((r) => r.ok).map((r) => r.endpoint),
       unavailable: all.filter((r) => !r.ok),
       results: all,
-      maps: {
-        working: maps.filter((m) => m.ok).map((m) => m.layer),
-        broken: maps.filter((m) => !m.ok),
-      },
+      /*
+       * Named explicitly, because an empty `maps.working` list and a skipped
+       * probe look identical otherwise — and "every layer is broken" is
+       * exactly the alarm that sent five rounds after the map last time.
+       */
+      mapsProbed: probeMaps,
+      maps: probeMaps
+        ? {
+            working: maps.filter((m) => m.ok).map((m) => m.layer),
+            broken: maps.filter((m) => !m.ok),
+          }
+        : { skipped: "Add ?maps=1 to probe the raster layers (~47 extra accesses)." },
+      /** Whether a key-level refusal was seen during this run. */
+      keyBreaker: breakerState(),
       mapStacks: {
         /*
          * Equal to the number of stacks that answered when the service is

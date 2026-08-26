@@ -202,8 +202,18 @@ export async function GET(
            * place, layers, zoom and time, so edge hits were always going to be
            * rare. Netlify's own directive is set explicitly rather than
            * inferred, so the intent survives any change of default.
+           *
+           * **Do not re-enable the shared caches to save accesses.** That is
+           * the obvious-looking economy here and it is the bug this route
+           * already had. The browser cache is the safe one — keyed on the full
+           * URL, private to one reader — so the lever is its lifetime, not its
+           * scope. Ten minutes rather than two: radar composites publish about
+           * every five minutes, so two minutes was refetching pictures that had
+           * not changed. The seven animation frames now cost seven accesses per
+           * ten minutes of playing instead of per two, which is where most of
+           * the map's share of the allowance was going.
            */
-          "Cache-Control": "private, max-age=120",
+          "Cache-Control": "private, max-age=600",
           "Netlify-CDN-Cache-Control": "no-store",
           "CDN-Cache-Control": "no-store",
           // What actually rendered, so the client can report any downgrade.

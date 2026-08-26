@@ -36,14 +36,73 @@ export const MAPS_BASE =
   process.env.XWEATHER_MAPS_BASE ?? "https://maps.api.xweather.com";
 
 /** Cache lifetimes (seconds) per class of data. */
+/*
+ * Cache lifetimes, in seconds — and the main lever on the access count.
+ *
+ * Every one of these was tighter than the data behind it actually moves, which
+ * is how a personal dashboard burned 15,000 accesses in eighteen days. One
+ * overview load is fourteen Xweather calls plus a place resolve, and the route
+ * sends `no-store`, so anything these do not absorb is paid again on every
+ * refresh, every location change, and the first load after every deploy.
+ *
+ * Set from the publication interval of each data set rather than from how
+ * fresh it would be nice for it to look: observations update on the hour,
+ * forecasts a few times a day, normals never. `minutely` stays shortest
+ * because a 60-minute nowcast is the one thing here that is genuinely about
+ * the next few minutes.
+ */
 const TTL = {
-  current: 120,
-  minutely: 120,
-  forecast: 900,
-  slow: 3600,
+  current: 600,
+  minutely: 300,
+  forecast: 3600,
+  slow: 21_600,
   archive: 86_400,
   places: 604_800,
 } as const;
+
+/**
+ * Codes that mean "this key cannot be used at all right now" — as opposed to
+ * "this endpoint has nothing for this place".
+ *
+ * Xweather pauses a plan that has spent its monthly allowance, and a paused
+ * key still costs a request to be told so. Without this, every dashboard load
+ * fired fifteen doomed calls, which is the worst possible time to be spending
+ * an allowance that has already run out.
+ */
+const KEY_LEVEL_CODES: ReadonlySet<string> = new Set([
+  "auth_error",
+  "invalid_client",
+  "permission_denied",
+  "auth_permission_denied",
+  "quota_exceeded",
+  "plan_limit",
+  "account_paused",
+]);
+
+/**
+ * Once a key-level refusal is seen, stop asking for a while.
+ *
+ * Module scope, so it lives as long as the serverless instance and no longer —
+ * deliberately: a breaker that outlived the process would need invalidating
+ * when the plan resumes, and a cold start already does that for free. The
+ * cost of being wrong is one wasted cycle after the plan comes back, against
+ * fifteen wasted calls on every load while it is out.
+ */
+const BREAKER_COOLDOWN_MS = 10 * 60 * 1000;
+let breakerUntil = 0;
+let breakerCode: string | null = null;
+
+/** Why the breaker is open, for diagnostics. Null when it is closed. */
+export function breakerState(): { open: boolean; code: string | null; msLeft: number } {
+  const msLeft = Math.max(0, breakerUntil - Date.now());
+  return { open: msLeft > 0, code: msLeft > 0 ? breakerCode : null, msLeft };
+}
+
+/** Close the breaker by hand — diagnostics does this so it always measures. */
+export function resetBreaker(): void {
+  breakerUntil = 0;
+  breakerCode = null;
+}
 
 interface XwEnvelope<T> {
   success: boolean;
@@ -144,6 +203,22 @@ export async function xwFetch<T>(
     );
   }
 
+  /*
+   * Answer a key-level refusal from memory rather than by asking again. The
+   * message says the same thing the upstream would have said, and the section
+   * still renders its notice — the only difference is that it did not cost an
+   * access to find out for the fourteenth time on this page load.
+   */
+  const breaker = breakerState();
+  if (breaker.open) {
+    return fail<T>(
+      `Xweather is not answering for this key (${breakerCode}). Pausing requests for ${Math.ceil(
+        breaker.msLeft / 60_000
+      )} more minute(s) rather than spending the allowance on refusals.`,
+      breakerCode
+    );
+  }
+
   const url = new URL(`${DATA_BASE}/${path.replace(/^\/+/, "")}`);
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null || value === "") continue;
@@ -175,6 +250,15 @@ export async function xwFetch<T>(
 
   if (!body.success) {
     const code = body.error?.code ?? `http_${res.status}`;
+    /*
+     * A refusal aimed at the key, not at the query, means every other call on
+     * this page is going to be refused too. Open the breaker so they are not
+     * all made.
+     */
+    if (KEY_LEVEL_CODES.has(code) || res.status === 429) {
+      breakerCode = code;
+      breakerUntil = Date.now() + BREAKER_COOLDOWN_MS;
+    }
     return fail<T>(describeError(code, body.error?.description ?? ""), code);
   }
 

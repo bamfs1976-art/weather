@@ -19,7 +19,12 @@ import {
   resolvePlace,
 } from "@/lib/xweather";
 import { getPollen } from "@/lib/pollen";
-import { getMetOfficeHourly } from "@/lib/metoffice";
+import { getMetOfficeDaily, getMetOfficeHourly } from "@/lib/metoffice";
+import {
+  metOfficeCurrent,
+  metOfficeToDailyPeriods,
+  metOfficeToPeriods,
+} from "@/lib/metoffice-periods";
 import { getMetNoForecast } from "@/lib/metno";
 import { getWeatherWarnings } from "@/lib/warnings";
 import { getAuroraStatus } from "@/lib/aurora";
@@ -86,6 +91,7 @@ export async function GET(request: NextRequest) {
     recent,
     pollen,
     metoffice,
+    metofficeDaily,
     metno,
     warnings,
     aurora,
@@ -114,6 +120,7 @@ export async function GET(request: NextRequest) {
         : null
     ),
     getMetOfficeHourly(resolved.data.lat, resolved.data.lon),
+    getMetOfficeDaily(resolved.data.lat, resolved.data.lon),
     /*
      * Four more upstreams, all keyless and all on hosts nothing else here
      * touches, so they add no load to a service already being asked for
@@ -125,6 +132,40 @@ export async function GET(request: NextRequest) {
     getModelSpread(resolved.data.lat, resolved.data.lon, 48),
     getEnsemble(resolved.data.lat, resolved.data.lon, 48),
   ]);
+
+  /*
+   * The forecast the page leads with, converted once here.
+   *
+   * Deriving it on the server rather than in each panel means the payload
+   * carries a single shape and the fallback is decided in one place: when the
+   * Met Office section failed, this one carries its error and the panels drop
+   * back to the Xweather sections exactly as they always rendered.
+   */
+  const primary: WeatherOverview["sections"]["primary"] =
+    metoffice.ok && metoffice.data
+      ? {
+          ok: true,
+          data: {
+            source: "metoffice" as const,
+            siteName: metoffice.data.siteName,
+            distanceKM: metoffice.data.distanceKM,
+            modelRunISO: metoffice.data.modelRunISO,
+            current: metOfficeCurrent(metoffice.data),
+            hourly: metOfficeToPeriods(metoffice.data),
+            daily:
+              metofficeDaily.ok && metofficeDaily.data
+                ? metOfficeToDailyPeriods(metofficeDaily.data)
+                : [],
+          },
+          error: null,
+          code: null,
+        }
+      : {
+          ok: false,
+          data: null,
+          error: metoffice.error,
+          code: metoffice.code,
+        };
 
   const payload: WeatherOverview = {
     place: resolved.data,
@@ -146,6 +187,8 @@ export async function GET(request: NextRequest) {
       recent,
       pollen,
       metoffice,
+      metofficeDaily,
+      primary,
       metno,
       warnings,
       aurora,

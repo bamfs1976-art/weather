@@ -14,6 +14,7 @@ import {
   skyToken,
   tzOffsetMinutes,
   uviCategory,
+  leadForecast,
 } from "@/lib/weather-format";
 import type { UnitSystem, WeatherOverview } from "@/lib/weather-types";
 
@@ -36,8 +37,13 @@ export function WeatherHero({
   hour12: boolean;
 }) {
   const { sections, place } = overview;
-  const current = sections.current?.data?.periods?.[0] ?? null;
-  const today = sections.daily?.data?.periods?.[0] ?? null;
+  /*
+   * The Met Office's numbers when it answered, Xweather's when it did not.
+   * Both arrive as WeatherPeriod, so nothing below this line knows which.
+   */
+  const lead = leadForecast(sections);
+  const current = lead.current;
+  const today = lead.daily[0] ?? null;
   const condition = classifyCondition(current?.icon, current?.weatherPrimaryCoded);
   const motion = skyMotion(condition);
   const offset =

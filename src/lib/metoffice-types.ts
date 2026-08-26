@@ -19,6 +19,34 @@ export interface MetOfficeHour {
   night: boolean;
 }
 
+/** One day of Met Office site-specific daily forecast, in the app's units. */
+export interface MetOfficeDay {
+  /** Midnight-to-midnight local day the entry covers. */
+  timeISO: string;
+  maxTempC: number | null;
+  minTempC: number | null;
+  maxFeelsLikeC: number | null;
+  minFeelsLikeC: number | null;
+  /** Daytime and night-time probability of precipitation, 0–100. */
+  dayPop: number | null;
+  nightPop: number | null;
+  windKPH: number | null;
+  windGustKPH: number | null;
+  windDirDEG: number | null;
+  humidity: number | null;
+  visibilityKM: number | null;
+  maxUvi: number | null;
+  dayKind: ConditionKind;
+  nightKind: ConditionKind;
+}
+
+export interface MetOfficeDaily {
+  siteName: string | null;
+  distanceKM: number | null;
+  days: MetOfficeDay[];
+  modelRunISO: string | null;
+}
+
 export interface MetOfficeForecast {
   /** Name the Met Office gave the nearest forecast point. */
   siteName: string | null;

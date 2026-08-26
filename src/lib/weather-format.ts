@@ -4,7 +4,12 @@
  */
 
 import type { WeatherWarning } from "./warning-types";
-import type { UnitSystem, WeatherPeriod } from "./weather-types";
+import type {
+  ConditionsResponse,
+  Section,
+  UnitSystem,
+  WeatherPeriod,
+} from "./weather-types";
 
 const DASH = "—";
 
@@ -899,4 +904,92 @@ export function activeWarnings(
     const at = Date.parse(warning.expiresISO);
     return !Number.isFinite(at) || at > now;
   });
+}
+
+/**
+ * Which forecast the page leads with, and where it came from.
+ *
+ * The Met Office is the authoritative forecaster for the UK, so when its
+ * section arrived it supplies the headline numbers and Xweather becomes the
+ * second opinion. Both are already `WeatherPeriod[]` by the time they reach
+ * here — the conversion happens on the server — so this is only ever choosing
+ * between two lists, never reconciling two shapes.
+ *
+ * `source` is returned rather than inferred by the caller because a card that
+ * shows a temperature without saying whose it is makes the disagreements
+ * between nine upstreams look like a bug rather than the point of the app.
+ */
+export interface LeadForecast {
+  current: WeatherPeriod | null;
+  hourly: WeatherPeriod[];
+  daily: WeatherPeriod[];
+  source: "Met Office" | "Xweather" | null;
+  /** The Met Office's nearest forecast point, when it is the one on screen. */
+  siteName: string | null;
+  distanceKM: number | null;
+  /**
+   * The same two series as Sections, so a panel built around `SectionBody`
+   * swaps one identifier instead of growing a second rendering path. When the
+   * lead is Xweather these are the original sections untouched, which is what
+   * keeps the failure messages the panels already show.
+   */
+  hourlySection: Section<ConditionsResponse> | undefined;
+  dailySection: Section<ConditionsResponse> | undefined;
+}
+
+/** Wrap a converted series so it can go where a Section is expected. */
+function asSection(periods: WeatherPeriod[]): Section<ConditionsResponse> {
+  return { ok: true, data: { periods }, error: null, code: null };
+}
+
+export function leadForecast(sections: {
+  primary?: Section<{
+    source: "metoffice";
+    siteName: string | null;
+    distanceKM: number | null;
+    modelRunISO: string | null;
+    current: WeatherPeriod | null;
+    hourly: WeatherPeriod[];
+    daily: WeatherPeriod[];
+  }>;
+  current?: Section<ConditionsResponse>;
+  hourly?: Section<ConditionsResponse>;
+  daily?: Section<ConditionsResponse>;
+}): LeadForecast {
+  const lead = sections.primary;
+  if (lead?.ok && lead.data && lead.data.current) {
+    return {
+      current: lead.data.current,
+      hourly: lead.data.hourly,
+      /*
+       * The daily list falls back on its own. The Met Office publishes hourly
+       * and daily as separate requests, so one can answer while the other is
+       * rate-limited — and a 10-day tab that empties because the *hourly*
+       * endpoint succeeded would be a strange way to fail.
+       */
+      daily:
+        lead.data.daily.length > 0
+          ? lead.data.daily
+          : (sections.daily?.data?.periods ?? []),
+      source: "Met Office",
+      siteName: lead.data.siteName,
+      distanceKM: lead.data.distanceKM,
+      hourlySection:
+        lead.data.hourly.length > 0 ? asSection(lead.data.hourly) : sections.hourly,
+      dailySection:
+        lead.data.daily.length > 0 ? asSection(lead.data.daily) : sections.daily,
+    };
+  }
+
+  const current = sections.current?.data?.periods?.[0] ?? null;
+  return {
+    current,
+    hourly: sections.hourly?.data?.periods ?? [],
+    daily: sections.daily?.data?.periods ?? [],
+    source: current ? "Xweather" : null,
+    siteName: null,
+    distanceKM: null,
+    hourlySection: sections.hourly,
+    dailySection: sections.daily,
+  };
 }

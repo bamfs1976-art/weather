@@ -81,6 +81,47 @@ User picks a place (search / geolocation / saved chip)
 `WeatherHistoryPanel` is the exception — it fetches `/api/history` and
 `/api/archive` itself, because the date range is user-driven.
 
+## The access allowance, and what spends it
+
+The plan is 15,000 accesses a month and it was spent in eighteen days. Every
+number here is per action, counted from the call sites — **a raster map image
+is an access too**, which is the part that is easy to forget.
+
+| Action | Accesses |
+|--------|----------|
+| One dashboard load (`/api/overview`) | **15** — 14 data sets + one `places` resolve |
+| One `/api/diagnostics` run | **~19**, or **~66** with `?maps=1` |
+| One map image on screen | **1** — seven time offsets, so seven per animation cycle |
+| History range change / archive day | ~3 each |
+| Typing a place name | 2–4 (`places/search`, 250 ms debounce) |
+
+- **`TTL` in `xweather.ts` is the main lever, and every value was tighter than
+  the data behind it moves.** Observations publish hourly, forecasts a few
+  times a day, normals never. Set these from the publication interval, not from
+  how fresh it would be nice for the page to look. `minutely` stays shortest
+  because a 60-minute nowcast is the one thing here genuinely about the next
+  few minutes.
+- **A key-level refusal opens a breaker.** Xweather pauses a plan that has
+  spent its allowance, and a paused key still costs a request to say so — so
+  every load was firing fifteen doomed calls at an allowance that had already
+  run out. `KEY_LEVEL_CODES` (plus HTTP 429) parks further calls for ten
+  minutes. It lives in module scope deliberately: a cold start clears it, so
+  there is nothing to invalidate when the plan resumes. Diagnostics calls
+  `resetBreaker()` first, because measuring is its whole purpose.
+- **The raster probes in diagnostics are off by default.** They were 47 of the
+  66 accesses a run cost, and they answer a question — "do the layer tokens
+  still resolve?" — that is asked once after changing a token and never again.
+  `?maps=1` runs them. The report says `mapsProbed` either way: an empty
+  `maps.working` and a skipped probe look identical otherwise, and "every layer
+  is broken" is exactly the alarm that sent five rounds after the map.
+- **Do not re-enable the shared caches on `/api/map` to save accesses.** That
+  is the obvious-looking economy and it is a bug this route already had: a
+  shared cache in front of it stored one image and served it for every distinct
+  layer stack. The browser cache is the safe one — keyed on the full URL,
+  private to one reader — so the lever is its *lifetime*, not its scope. It is
+  ten minutes rather than two, which matches how often radar composites
+  publish and cuts the animation's cost by five.
+
 ## Xweather notes
 
 - Base URL `https://data.api.xweather.com/{endpoint}/{action}`, auth via
@@ -143,14 +184,52 @@ User picks a place (search / geolocation / saved chip)
   mappings are covered by a test — check the codes against Xweather's list
   rather than from memory, which got five of them wrong in one sitting.
 
-## Met Office comparison
+## Met Office is the primary forecast
 
-A second forecast beside Xweather rather than instead of it — the DataHub has no
-nowcast, no radar rasters and no archive, which is most of what this app does.
+**The Met Office supplies the headline numbers; Xweather is the second opinion.**
+It is the authoritative forecaster for the UK and this is a UK dashboard. The
+DataHub still has no nowcast, no radar rasters and no archive — so Xweather is
+not going anywhere, it just stopped being what the page leads with.
 
-- **The free plan is 360 calls a day**, reset at 00:00 UTC. `getMetOfficeHourly`
-  caches for 30 minutes, so one location costs about 48. Raising that cache is
-  the first thing to check if a `rate_limited` section appears.
+- **The conversion happens once, on the server.** `metoffice-periods.ts` turns
+  `MetOfficeHour`/`MetOfficeDay` into `WeatherPeriod` — Xweather's shape — and
+  `/api/overview` publishes the result as the `primary` section. Teaching each
+  panel about a second provider would have meant touching every one of them and
+  leaving two rendering paths to drift; instead **no panel knows there are two
+  providers**. `leadForecast()` in `weather-format.ts` picks `primary` when it
+  is ok and falls back to the Xweather sections when it is not, and returns
+  ready-made `Section`s so a panel swaps one identifier rather than growing a
+  second branch.
+- **A failed `primary` is not an error state**, it is the fallback path — the
+  panels then render exactly what they always rendered. Which is why the cards
+  take their `source` from `lead.source` rather than a hard-coded string: with
+  nine upstreams the provider has to be visible, and it is no longer constant.
+- **The condition round-trip is asserted, not assumed.** A synthesised period
+  carries the kind in `weatherPrimaryCoded` and the night flag in `icon` —
+  `classifyCondition` decides the kind from the code outright and derives night
+  from the name's trailing "n" independently, so one pair of names serves every
+  condition. All 17 kinds × day/night were checked to classify back to
+  themselves. Do not hand-edit `CODE_FOR_KIND` from memory; CLAUDE.md already
+  records five of those suffixes being got wrong in one sitting.
+- **The daily action's field names are unverified.** No Met Office host is
+  reachable from the build environment, so `dayMaxScreenTemperature` and its
+  siblings follow the documentation. The *path* is not a guess — `daily` is the
+  action sibling of the `hourly` endpoint already proven in production on the
+  same subscription, which is the distinction this file draws between adding an
+  action and hunting for a product. Diagnostics reports `days` **and**
+  `daysWithTemp`: a successful request with zero `daysWithTemp` is a wrong
+  field name, not a wrong path.
+- **`pop` on a day is the higher of the day and night halves.** A 60% chance
+  overnight is still a wet day; taking the daytime figure alone would hide it.
+
+- **The free plan is 360 calls a day**, reset at 00:00 UTC, and **two** actions
+  are now in play. Half an hour each would be 96 a day for one location — three
+  saved places and the allowance is gone by evening. Hourly is cached for an
+  hour and daily for three: 32 a day per location, so eleven places fit.
+  Nothing is lost by it, because the displayed "now" is chosen per request from
+  the cached 48-hour series (`metOfficeCurrent`) rather than being whatever the
+  cache happened to store — **a cached series still shows the right hour**.
+  Raising these is the first thing to check if a `rate_limited` section appears.
 - Values arrive in SI and are converted in `lib/metoffice.ts`: m/s to km/h,
   pascals to millibars, metres to kilometres. Do not pass raw Met Office numbers
   to the formatters.
