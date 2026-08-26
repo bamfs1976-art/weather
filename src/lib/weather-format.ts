@@ -3,6 +3,7 @@
  * UI uses to turn Xweather's dual-unit payloads into strings.
  */
 
+import type { WeatherWarning } from "./warning-types";
 import type { UnitSystem, WeatherPeriod } from "./weather-types";
 
 const DASH = "—";
@@ -877,4 +878,25 @@ export function agreementLabel(meanAbsTempDeltaC: number | null): {
   if (meanAbsTempDeltaC < 1.5) return { label: "Broad agreement", tone: "good" };
   if (meanAbsTempDeltaC < 2.5) return { label: "Some disagreement", tone: "accent" };
   return { label: "Notable disagreement", tone: "warn" };
+}
+
+/**
+ * Warnings that have not already finished.
+ *
+ * The server drops expired CAP entries when it parses the feed, so this is the
+ * second half of the same rule rather than a duplicate of it: a page left open
+ * overnight — which a weather dashboard on a phone is — holds whatever payload
+ * it fetched, and a warning that ends at 12:00 must not still be on screen at
+ * 13:00 because nothing has re-fetched. An entry with no expiry is kept, the
+ * same way the server keeps it.
+ */
+export function activeWarnings(
+  warnings: WeatherWarning[],
+  now: number = Date.now()
+): WeatherWarning[] {
+  return warnings.filter((warning) => {
+    if (!warning.expiresISO) return true;
+    const at = Date.parse(warning.expiresISO);
+    return !Number.isFinite(at) || at > now;
+  });
 }

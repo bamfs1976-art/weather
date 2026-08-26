@@ -223,15 +223,43 @@ Six more upstreams, none of which needs a key or registration. All return
 | AuroraWatch UK | card on Air & Sun | national measurement, not a local forecast |
 
 - **Warnings prefer MeteoAlarm's CAP feed and fall back to the RSS.** CAP
-  publishes `cap:severity` as a controlled vocabulary — Extreme/Severe → red,
-  Moderate → amber, Minor → yellow — so the level is *read* rather than guessed
-  out of the title, and `cap:onset`/`cap:expires` give a real validity window.
-  `fromMeteoAlarm()` returns `null` rather than a failed Section precisely so a
-  bad day at MeteoAlarm falls through to the RSS instead of blanking the banner;
-  `via` records which one answered and diagnostics reports it. Entries are
-  filtered by `cap:areaDesc` against the region name, and **an entry with no
-  area at all is kept** — UK-wide warnings carry no area, and dropping them
-  would discard the most important ones.
+  publishes `cap:severity` as a controlled vocabulary — so the level is *read*
+  rather than guessed out of the title, and `cap:onset`/`cap:expires` give a
+  real validity window. `fromMeteoAlarm()` returns `null` rather than a failed
+  Section precisely so a bad day at MeteoAlarm falls through to the RSS instead
+  of blanking the banner; `via` records which one answered and diagnostics
+  reports it. Entries are filtered by `cap:areaDesc` against the region name,
+  and **an entry with no area at all is kept** — UK-wide warnings carry no
+  area, and dropping them would discard the most important ones.
+- **`cap:expires` is a filter, not just a caption.** It was being formatted
+  into the "Valid from … to …" line and never compared to the clock, so a
+  thunderstorm warning that ended on 20 August was still on the card on the
+  26th, in the present tense, under a live-looking heading. The feed listing
+  recent alerts is normal; showing them is not. Entries whose expiry has passed
+  are dropped, and a feed where *every* entry has expired reports `all-expired`
+  rather than `none-for-region` — a stale feed and a quiet region are different
+  findings, and only the first one went unnoticed for a week. An entry with no
+  expiry is kept, the same reasoning as one with no area.
+- **The same rule runs again in the browser, because a payload outlives its
+  fetch.** `activeWarnings()` in `weather-format.ts` re-applies it against a
+  once-a-minute clock, so a dashboard left open on a phone does not still show
+  a warning that ended an hour ago. The clock is a `useSyncExternalStore`
+  singleton with a **server snapshot of `0`, which filters nothing** — the
+  server cannot know what time it will be at hydration, and a mismatch here
+  would land on the one element of the page that must not flicker.
+- **MeteoAlarm severity is one level lower than it reads.** Its awareness
+  levels are 2 yellow, 3 amber, 4 red, published as `Moderate`, `Severe` and
+  `Extreme`; mapping Severe → red and Moderate → amber put the words "Amber
+  warning" directly above "Yellow thunderstorm warning" on the same card. It is
+  Extreme → red, Severe → amber, Moderate/Minor → yellow, and the
+  `awareness_level` parameter — "2; yellow; Moderate" — is preferred over
+  `severity` where the entry carries it, because it names the colour outright.
+- **The colour is not always the word before "warning".** The RSS says "Yellow
+  warning of rain affecting Wales" but CAP events read "Yellow thunderstorm
+  warning affecting …", so `levelFrom()` matching the literal string
+  `yellow warning` silently found the first and missed the second. It allows
+  words in between now, but still requires "warning" nearby — a colour in prose
+  must not set a level.
 - **`capReason` says why CAP lost, because `via` alone cannot.** An empty feed
   and an unreachable one both fell back to the RSS and both reported
   `via: "nswws-rss"`, so a wrong URL would have looked exactly like a quiet day

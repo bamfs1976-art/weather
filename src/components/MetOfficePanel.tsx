@@ -252,27 +252,28 @@ function WarningBlock({
   }
 
   const { region, warnings: list } = warnings.data;
-  if (list.length === 0) {
-    return (
-      <Card
-        title="Severe weather warnings"
-        subtitle={`National Severe Weather Warning Service — ${region}`}
-        source="Met Office NSWWS"
-      >
-        <p className="wx-good-text text-sm">
-          No warnings in force for {region}.
-        </p>
-      </Card>
-    );
-  }
 
+  /*
+   * The empty state is the banner's business rather than a length check here.
+   * A list can also empty out *after* it arrives — the banner drops warnings
+   * as they expire — and a card that only checked the length it was handed
+   * would keep its heading above nothing.
+   */
   return (
     <Card
       title="Severe weather warnings"
       subtitle={`National Severe Weather Warning Service — ${region}`}
       source="Met Office NSWWS"
     >
-      <WarningBanner region={region} warnings={list} />
+      <WarningBanner
+        region={region}
+        warnings={list}
+        empty={
+          <p className="wx-good-text text-sm">
+            No warnings in force for {region}.
+          </p>
+        }
+      />
     </Card>
   );
 }

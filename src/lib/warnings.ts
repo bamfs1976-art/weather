@@ -127,11 +127,26 @@ function tag(block: string, name: string): string | null {
  * reasons it is a cache rather than an API.
  */
 function levelFrom(title: string): WarningLevel {
-  const lower = title.toLowerCase();
-  if (lower.includes("red warning")) return "red";
-  if (lower.includes("amber warning")) return "amber";
-  if (lower.includes("yellow warning")) return "yellow";
-  return "unknown";
+  /*
+   * The hazard sits between the colour and the word "warning" as often as not:
+   * the RSS says "Yellow warning of rain affecting Wales" but CAP events read
+   * "Yellow thunderstorm warning affecting …". Matching the literal "yellow
+   * warning" found the first and missed the second, which is how a yellow
+   * warning came to be labelled amber. Allow words in between, but still
+   * require "warning" nearby so a colour mentioned in prose cannot set a level.
+   */
+  const match = title.match(/\b(red|amber|orange|yellow)\b[\w\s-]{0,40}?\bwarnings?\b/i);
+  switch (match?.[1].toLowerCase()) {
+    case "red":
+      return "red";
+    case "amber":
+    case "orange":
+      return "amber";
+    case "yellow":
+      return "yellow";
+    default:
+      return "unknown";
+  }
 }
 
 /** "Yellow warning of rain affecting Wales" -> "rain". */
@@ -154,20 +169,59 @@ function validityFrom(description: string): string | null {
   return match ? match[0].trim() : null;
 }
 
-/** CAP severity is a controlled vocabulary, which is the entire point of it. */
-function levelFromCap(severity: string | null, event: string | null): WarningLevel {
+/**
+ * CAP severity is a controlled vocabulary, which is the entire point of it —
+ * but it has to be mapped to the right colour, and this mapping was a level
+ * too high in every row. MeteoAlarm's awareness levels are 2 yellow, 3 amber,
+ * 4 red, published as `Moderate`, `Severe` and `Extreme`, and the Met Office
+ * publishes NSWWS through that scheme. Reading `Severe` as red and `Moderate`
+ * as amber is what put "Amber warning" directly above the words "Yellow
+ * thunderstorm warning" on the same card.
+ *
+ * `awareness_level` is preferred over `severity` where it exists, because it
+ * names the colour outright ("2; yellow; Moderate") rather than implying it.
+ */
+function levelFromCap(
+  severity: string | null,
+  event: string | null,
+  awareness: string | null = null
+): WarningLevel {
+  const named = levelFrom(`${awareness ?? ""} warning`);
+  if (named !== "unknown") return named;
+
   switch ((severity ?? "").trim().toLowerCase()) {
     case "extreme":
-    case "severe":
       return "red";
-    case "moderate":
+    case "severe":
       return "amber";
+    case "moderate":
     case "minor":
       return "yellow";
     default:
       // Some producers put the colour in the event text instead.
       return levelFrom(event ?? "");
   }
+}
+
+/**
+ * A CAP `<parameter>`, which `tag()` cannot reach — the name and the value are
+ * siblings rather than nested, so the block has to be found by its valueName.
+ */
+function capParameter(block: string, name: string): string | null {
+  const match = block.match(
+    new RegExp(
+      `<(?:cap:)?valueName>\\s*(?:<!\\[CDATA\\[)?\\s*${name}[\\s\\S]{0,40}?<(?:cap:)?value>([\\s\\S]*?)</(?:cap:)?value>`,
+      "i"
+    )
+  );
+  return match ? text(match[1]) : null;
+}
+
+/** A CAP timestamp as an instant, or null if it is missing or unparseable. */
+function instant(raw: string | null): string | null {
+  if (!raw) return null;
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? new Date(at).toISOString() : null;
 }
 
 /**
@@ -195,7 +249,9 @@ export type CapReason =
   | "timeout"
   | "not-xml"
   | "no-entries"
-  | "none-for-region";
+  | "none-for-region"
+  /** The feed answered, but every entry for this region has already expired. */
+  | "all-expired";
 
 /** Fetch one candidate feed. Returns the body, or why it could not be used. */
 async function fetchCapFeed(
@@ -239,7 +295,8 @@ async function fetchCapFeed(
 }
 
 async function fromMeteoAlarm(
-  region: { id: string; name: string }
+  region: { id: string; name: string },
+  now: number = Date.now()
 ): Promise<{ warnings: WeatherWarning[] | null; reason: CapReason; feed: string | null }> {
   let body: string | null = null;
   let feed: string | null = null;
@@ -272,6 +329,12 @@ async function fromMeteoAlarm(
 
   const entries = body.split(/<entry[\s>]|<item[\s>]/i).slice(1);
   const out: WeatherWarning[] = [];
+  /*
+   * Counted so an all-stale feed can say so. A feed still listing last week's
+   * warnings and a feed with nothing for this region are different findings,
+   * and only the first one would have gone unnoticed.
+   */
+  let expired = 0;
   for (const raw of entries) {
     /*
      * The national feed covers every UK region, so entries are matched against
@@ -285,8 +348,26 @@ async function fromMeteoAlarm(
     const event = tag(raw, "cap:event") ?? tag(raw, "event") ?? tag(raw, "title");
     if (!event) continue;
     const severity = tag(raw, "cap:severity") ?? tag(raw, "severity");
-    const onset = tag(raw, "cap:onset") ?? tag(raw, "onset");
+    const onset = tag(raw, "cap:onset") ?? tag(raw, "onset") ?? tag(raw, "cap:effective");
     const expires = tag(raw, "cap:expires") ?? tag(raw, "expires");
+    const onsetISO = instant(onset);
+    const expiresISO = instant(expires);
+
+    /*
+     * Drop what has already finished. CAP publishes an expiry as a field and
+     * this code was formatting it into a display string without ever comparing
+     * it to the clock, so a warning that ended on the 20th was still on the
+     * card on the 26th — presented, in the present tense, as if it were in
+     * force. A feed listing recent alerts is normal; showing them is not.
+     *
+     * An entry with no expiry, or with one that will not parse, is kept: the
+     * same reasoning as an entry with no area. The cost of keeping a warning
+     * one hour too long is nothing beside the cost of dropping a live one.
+     */
+    if (expiresISO && Date.parse(expiresISO) <= now) {
+      expired += 1;
+      continue;
+    }
 
     const window =
       onset && expires
@@ -297,33 +378,36 @@ async function fromMeteoAlarm(
 
     out.push({
       id: tag(raw, "id") ?? `${event}-${onset ?? ""}`,
-      level: levelFromCap(severity, event),
+      level: levelFromCap(severity, event, capParameter(raw, "awareness_level")),
       hazard: hazardFrom(event) ?? event,
       title: area ? `${event} affecting ${area}` : event,
       description:
         tag(raw, "cap:description") ?? tag(raw, "description") ?? tag(raw, "summary"),
       validity: window,
-      issuedISO: (() => {
-        const sent = tag(raw, "cap:sent") ?? tag(raw, "updated") ?? tag(raw, "published");
-        const at = sent ? Date.parse(sent) : NaN;
-        return Number.isFinite(at) ? new Date(at).toISOString() : null;
-      })(),
+      onsetISO,
+      expiresISO,
+      issuedISO: instant(
+        tag(raw, "cap:sent") ?? tag(raw, "updated") ?? tag(raw, "published")
+      ),
       link: tag(raw, "link") ?? "https://www.metoffice.gov.uk/weather/warnings-and-advice/uk-warnings",
     });
   }
 
   if (out.length > 0) return { warnings: out, reason: "ok", feed };
-  // A feed that parsed but held nothing for here is working, just quiet.
+  // A feed that parsed but held nothing current for here is working, just quiet.
   return {
     warnings: null,
-    reason: entries.length === 0 ? "no-entries" : "none-for-region",
+    reason:
+      entries.length === 0 ? "no-entries" : expired > 0 ? "all-expired" : "none-for-region",
     feed,
   };
 }
 
 export async function getWeatherWarnings(
   lat: number,
-  lon: number
+  lon: number,
+  /** Overridable so the expiry rule can be exercised against a fixed clock. */
+  options: { now?: number } = {}
 ): Promise<
   Section<{
     region: string;
@@ -343,7 +427,7 @@ export async function getWeatherWarnings(
    * so the structured source is the one normally in play and the scraped one is
    * genuinely a fallback rather than the default.
    */
-  const cap = await fromMeteoAlarm(region);
+  const cap = await fromMeteoAlarm(region, options.now ?? Date.now());
   if (cap.warnings) {
     const RANK: Record<WarningLevel, number> = { red: 0, amber: 1, yellow: 2, unknown: 3 };
     cap.warnings.sort((a, b) => RANK[a.level] - RANK[b.level]);
@@ -414,6 +498,15 @@ export async function getWeatherWarnings(
       title,
       description: description || null,
       validity: validityFrom(description),
+      /*
+       * Null on purpose. The RSS window is free text with no year in it
+       * ("valid from 1500 Mon 11 Aug"), so there is nothing here that could be
+       * compared to a clock without guessing. This feed does not need it: it
+       * is a live per-region cache that publishes a "no warnings in force"
+       * item once a warning ends, which is already filtered out above.
+       */
+      onsetISO: null,
+      expiresISO: null,
       issuedISO: (() => {
         const published = tag(raw, "pubDate");
         if (!published) return null;
