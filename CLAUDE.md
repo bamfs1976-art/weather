@@ -222,6 +222,59 @@ not going anywhere, it just stopped being what the page leads with.
 - **`pop` on a day is the higher of the day and night halves.** A 60% chance
   overnight is still a wet day; taking the daytime figure alone would hide it.
 
+### The API does not support parameter subsetting
+
+**Every request returns every parameter for that time step**, so a field the
+app does not read is a field it fetched and threw away. Hourly returns 18,
+three-hourly 21, daily 41. Reading more of them costs nothing — no extra call,
+no extra allowance, no extra latency. This is the first thing to check before
+adding an upstream: the answer may already be in a response being fetched.
+
+- **All three actions share one free 360-a-day allowance**: `hourly` (48 h),
+  `three-hourly` (168 h) and `daily` (7 days). Caches are 1 h, 3 h and 3 h, so
+  a location costs 40 a day and nine saved places fit.
+- **Dew point was the visible casualty.** `NowPanel` reads `dewpointC` for a
+  tile and for the "Comfortable / Humid" hints, and nothing was feeding it once
+  the Met Office became primary — `screenDewPointTemperature` had been arriving
+  in every response all along. Also now read: `precipitationRate`,
+  `totalSnowAmount`, `maxScreenAirTemp`, `minScreenAirTemp`, `max10mWindGust`.
+- **The daily bounds are a real confidence interval**, not a spread inferred
+  from disagreement: `dayLowerBoundMaxTemp` is the value with a 97.5%
+  probability of being exceeded and `dayUpperBoundMaxTemp` the one with a 97.5%
+  probability of not being, so the gap is a 95% interval on the day's high.
+  `ConfidenceCard` shows it and **falls back to the Open-Meteo `EnsembleCard`
+  when no day carries a bound** — the check is on a bound actually arriving,
+  not on the section being ok, so an unrecognised field name degrades to the
+  card that already worked instead of showing an empty one.
+- **Probability by type replaces one blended number.** Rain, heavy rain, snow,
+  heavy snow, hail and sferics, day and night. **"Sferics" is a lightning
+  strike within 50 km** — the Met Office's own answer to a card that was
+  costing an Xweather access. `PrecipChancesCard` hides any row no day carries.
+- **Day/night now comes from the daily response**, which already splits every
+  measurement into the two halves that strip wants, so the Xweather `daynight`
+  call was dropped: one fewer access on every dashboard load. The night half is
+  stamped at +12 h rather than sharing the day's instant, because two periods
+  at the same time collapse in any list keyed on time.
+- **`RestOfWeek` takes its cutoff from the data, never the clock.**
+  `Date.now()` during render is impure *and* a hydration hazard — server and
+  browser would disagree about how many tiles to draw. The last hour the 48-hour
+  strip actually shows is deterministic and is the more literal reading of
+  "where the hourly forecast ends".
+- **A range converts as a scale, not a temperature.** A 4 °C spread is 7.2 °F,
+  not 39.2 °F; putting a difference through `formatTemp` adds the 32° offset
+  and turns every band into nonsense. `degrees()` in `ConfidenceCard` exists
+  for that.
+- **BPF is not free and should not be built on.** The Blended Probabilistic
+  Forecast is a 30-day trial at 55 calls a day, one site, then paid. It is the
+  most tempting product on the DataHub and it does not fit this app; the daily
+  bounds above give most of the same value at no cost.
+- **Land observations is free (360/day) and still not used.** The note below
+  says do not restart it, and the reasoning — Xweather already carries station
+  readings — was sound when Xweather was healthy. It is weaker now that
+  Xweather is rationed, so this is no longer a closed case, only a low
+  priority: it covers ~140 UK sites, so the question is whether one is near
+  enough to be worth a call.
+
 - **The free plan is 360 calls a day**, reset at 00:00 UTC, and **two** actions
   are now in play. Half an hour each would be 96 a day for one location — three
   saved places and the allowance is gone by evening. Hourly is cached for an

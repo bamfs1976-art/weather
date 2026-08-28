@@ -1,4 +1,8 @@
-import type { MetOfficeDaily, MetOfficeForecast } from "./metoffice-types";
+import type {
+  MetOfficeDaily,
+  MetOfficeForecast,
+  MetOfficeThreeHourly,
+} from "./metoffice-types";
 import type { MetNoForecast } from "./metno-types";
 import type { ModelSpread } from "./model-types";
 import type { EnsembleForecast } from "./ensemble-types";
@@ -398,6 +402,8 @@ export interface WeatherOverview {
     metoffice: Section<MetOfficeForecast>;
     /** Met Office site-specific daily forecast, behind the 10-day tab. */
     metofficeDaily: Section<MetOfficeDaily>;
+    /** Met Office three-hourly: 168 hours, so the forecast reaches a week. */
+    metofficeThreeHourly: Section<MetOfficeThreeHourly>;
     /**
      * The forecast the dashboard leads with, already in the app's own shape.
      *
@@ -419,6 +425,8 @@ export interface WeatherOverview {
       current: WeatherPeriod | null;
       hourly: WeatherPeriod[];
       daily: WeatherPeriod[];
+      /** Three-hour steps out to a week, beyond where `hourly` stops. */
+      threeHourly: WeatherPeriod[];
     }>;
     /** MET Norway, the third forecast in the comparison. */
     metno: Section<MetNoForecast>;

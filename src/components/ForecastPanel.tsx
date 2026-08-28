@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { ModelSpreadCard } from "./ModelSpreadCard";
 import { EnsembleCard } from "./EnsembleCard";
+import { ConfidenceCard } from "./ConfidenceCard";
+import { PrecipChancesCard } from "./PrecipChancesCard";
 import { Card, Chip, Meter, Metric, SectionBody } from "./ui";
 import { SeriesChart } from "./Chart";
 import { CloudRainIcon, ConditionGlyph, WindIcon } from "@/components/icons";
@@ -43,11 +45,33 @@ export function ForecastPanel({
    * whose it is makes the disagreements look like a bug.
    */
   const leadSource = lead.source === "Met Office" ? "Met Office DataHub" : "Vaisala Xweather";
+  const metofficeDaily = overview.sections.metofficeDaily;
+  const hasBounds = Boolean(
+    metofficeDaily?.ok &&
+      metofficeDaily.data?.days.some(
+        (d) => isNum(d.maxTempBounds.lowerC) && isNum(d.maxTempBounds.upperC)
+      )
+  );
 
   return (
     <div className="space-y-4">
       <ModelSpreadCard section={overview.sections.modelSpread} hour12={hour12} />
-      <EnsembleCard section={overview.sections.ensemble} hour12={hour12} />
+      {/*
+        * The Met Office's own confidence interval when it published one, the
+        * Open-Meteo ensemble otherwise. Preferring the forecaster the rest of
+        * the page leads with keeps one provider's uncertainty from qualifying
+        * another provider's numbers — and the check is on whether a bound
+        * actually arrived, not merely on the section being ok, so an
+        * unrecognised field name falls back to the card that already worked
+        * rather than showing an empty one.
+        */}
+      {hasBounds ? (
+        <ConfidenceCard section={overview.sections.metofficeDaily} units={units} />
+      ) : (
+        <EnsembleCard section={overview.sections.ensemble} hour12={hour12} />
+      )}
+
+      <PrecipChancesCard section={overview.sections.metofficeDaily} />
 
       <Card
         title="10-day outlook"
@@ -190,7 +214,12 @@ export function ForecastPanel({
       <Card
         title="Day & night periods"
         subtitle="Separate daytime and overnight forecasts, the way a broadcast reads them"
-        source="Vaisala Xweather"
+        /*
+         * These halves now come out of the Met Office daily response, which
+         * splits every measurement into day and night already — so the strip
+         * costs nothing where it used to need its own Xweather call.
+         */
+        source={metofficeDaily?.ok ? "Met Office DataHub" : "Vaisala Xweather"}
       >
         <SectionBody section={overview.sections.dayNight}>
           {(data) => (

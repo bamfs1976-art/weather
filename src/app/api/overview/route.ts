@@ -5,7 +5,6 @@ import {
   getAlerts,
   getCurrentConditions,
   getDailyForecast,
-  getDayNightForecast,
   getHourlyForecast,
   getLightningSummary,
   getMinutely,
@@ -19,11 +18,17 @@ import {
   resolvePlace,
 } from "@/lib/xweather";
 import { getPollen } from "@/lib/pollen";
-import { getMetOfficeDaily, getMetOfficeHourly } from "@/lib/metoffice";
+import {
+  getMetOfficeDaily,
+  getMetOfficeHourly,
+  getMetOfficeThreeHourly,
+} from "@/lib/metoffice";
 import {
   metOfficeCurrent,
+  metOfficeDayNightPeriods,
   metOfficeToDailyPeriods,
   metOfficeToPeriods,
+  metOfficeToStepPeriods,
 } from "@/lib/metoffice-periods";
 import { getMetNoForecast } from "@/lib/metno";
 import { getWeatherWarnings } from "@/lib/warnings";
@@ -80,7 +85,6 @@ export async function GET(request: NextRequest) {
     minutely,
     hourly,
     daily,
-    dayNight,
     alerts,
     airQuality,
     airQualityForecast,
@@ -92,6 +96,7 @@ export async function GET(request: NextRequest) {
     pollen,
     metoffice,
     metofficeDaily,
+    metofficeThreeHourly,
     metno,
     warnings,
     aurora,
@@ -103,7 +108,6 @@ export async function GET(request: NextRequest) {
     getMinutely(point),
     getHourlyForecast(point, 48),
     getDailyForecast(point, 10),
-    getDayNightForecast(point, 14),
     getAlerts(point),
     getAirQuality(point),
     getAirQualityForecast(point, 24),
@@ -121,6 +125,7 @@ export async function GET(request: NextRequest) {
     ),
     getMetOfficeHourly(resolved.data.lat, resolved.data.lon),
     getMetOfficeDaily(resolved.data.lat, resolved.data.lon),
+    getMetOfficeThreeHourly(resolved.data.lat, resolved.data.lon),
     /*
      * Four more upstreams, all keyless and all on hosts nothing else here
      * touches, so they add no load to a service already being asked for
@@ -141,6 +146,28 @@ export async function GET(request: NextRequest) {
    * Met Office section failed, this one carries its error and the panels drop
    * back to the Xweather sections exactly as they always rendered.
    */
+  /*
+   * Day and night now come out of the Met Office daily response, which already
+   * splits every measurement into the two halves this strip wants. That is one
+   * fewer Xweather call on every dashboard load for a card that reads better
+   * for it — each half carries its own condition and probability rather than
+   * repeating the day's.
+   */
+  const dayNight: WeatherOverview["sections"]["dayNight"] =
+    metofficeDaily.ok && metofficeDaily.data
+      ? {
+          ok: true,
+          data: { periods: metOfficeDayNightPeriods(metofficeDaily.data) },
+          error: null,
+          code: null,
+        }
+      : {
+          ok: false,
+          data: null,
+          error: metofficeDaily.error,
+          code: metofficeDaily.code,
+        };
+
   const primary: WeatherOverview["sections"]["primary"] =
     metoffice.ok && metoffice.data
       ? {
@@ -155,6 +182,16 @@ export async function GET(request: NextRequest) {
             daily:
               metofficeDaily.ok && metofficeDaily.data
                 ? metOfficeToDailyPeriods(metofficeDaily.data)
+                : [],
+            /*
+             * The week at three-hour resolution. The hourly action stops at 48
+             * hours; this is the only site-specific action that goes further
+             * without dropping to whole days, and it shares the same free
+             * allowance.
+             */
+            threeHourly:
+              metofficeThreeHourly.ok && metofficeThreeHourly.data
+                ? metOfficeToStepPeriods(metofficeThreeHourly.data)
                 : [],
           },
           error: null,
@@ -188,6 +225,7 @@ export async function GET(request: NextRequest) {
       pollen,
       metoffice,
       metofficeDaily,
+      metofficeThreeHourly,
       primary,
       metno,
       warnings,

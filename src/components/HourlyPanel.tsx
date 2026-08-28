@@ -18,6 +18,7 @@ import {
   formatWeekday,
   isNum,
   leadForecast,
+  pickUnit,
 } from "@/lib/weather-format";
 import type { UnitSystem, WeatherOverview, WeatherPeriod } from "@/lib/weather-types";
 import { ForecastComparison } from "./ForecastComparison";
@@ -148,7 +149,104 @@ export function HourlyPanel({
             />
           )}
       </Card>
+
+      <RestOfWeek
+        periods={lead.threeHourly}
+        after={hourlySection?.data?.periods ?? []}
+        units={units}
+        hour12={hour12}
+      />
     </div>
+  );
+}
+
+/**
+ * The rest of the week, at three-hour resolution.
+ *
+ * The hourly forecast stops at 48 hours. The Met Office's three-hourly action
+ * runs to 168 — a full week — on the same free allowance, and it was the one
+ * site-specific endpoint the app never asked for. This card starts where the
+ * hourly strip above ends, so the two are a continuation rather than two views
+ * of the same two days.
+ *
+ * Renders nothing at all when there is no three-hourly forecast: that is the
+ * Xweather fallback path, where this data does not exist, and an empty card
+ * explaining the absence of something the user never asked for is noise.
+ */
+function RestOfWeek({
+  periods,
+  after,
+  units,
+  hour12,
+}: {
+  periods: WeatherPeriod[];
+  /** The hourly strip above; this card starts where its last period ends. */
+  after: WeatherPeriod[];
+  units: UnitSystem;
+  hour12: boolean;
+}) {
+  /*
+   * The cutoff comes from the data, not from the clock.
+   *
+   * `Date.now()` during render is both impure and a hydration hazard — the
+   * server and the browser would compute different cutoffs and disagree about
+   * how many tiles to draw. Taking the last hour the strip above actually
+   * shows is deterministic, and it is also the more literal reading of
+   * "picking up where the 48-hour forecast ends": no overlap, no gap, whatever
+   * hour the model run happens to start at.
+   */
+  const cutoff = after.reduce((latest, period) => {
+    const at = Date.parse(period.dateTimeISO ?? period.validTime ?? "");
+    return Number.isFinite(at) && at > latest ? at : latest;
+  }, Number.NEGATIVE_INFINITY);
+
+  const later = periods.filter((p) => {
+    const at = Date.parse(p.dateTimeISO ?? p.validTime ?? "");
+    return Number.isFinite(at) && at > cutoff;
+  });
+
+  if (later.length === 0) return null;
+
+  return (
+    <Card
+      title="The rest of the week"
+      subtitle="Three-hour steps, picking up where the 48-hour forecast ends"
+      source="Met Office DataHub"
+    >
+      <SeriesChart
+        labels={later.map((p) => formatWeekday(p.dateTimeISO ?? p.validTime))}
+        height={200}
+        series={[
+          {
+            label: `Temperature (${units === "metric" ? "°C" : "°F"})`,
+            color: "#38bdf8",
+            values: later.map((p) => pickUnit(p.tempC, p.tempF, units)),
+            fill: true,
+          },
+        ]}
+      />
+
+      <div className="wx-scroll -mx-1 mt-3 flex gap-2 px-1 pb-2">
+        {later.map((period) => {
+          const iso = period.dateTimeISO ?? period.validTime ?? "";
+          return (
+            <div key={iso} className="wx-inset relative w-[92px] shrink-0 px-2 py-2.5 text-center">
+              <div className="wx-muted text-[11px]">{formatHourLabel(iso, hour12)}</div>
+              <div className="wx-dim text-[10px]">{formatWeekday(iso)}</div>
+              <div className="my-1 text-xl" aria-hidden>
+                <ConditionGlyph icon={period.icon} coded={period.weatherPrimaryCoded} />
+              </div>
+              <div className="text-base font-semibold">
+                {formatTemp(period.tempC, period.tempF, units)}
+              </div>
+              <div className="wx-muted mt-0.5 text-[11px]">
+                {isNum(period.pop) ? `${period.pop}%` : "—"}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 

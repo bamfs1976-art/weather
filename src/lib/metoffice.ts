@@ -28,6 +28,8 @@ import type {
   MetOfficeDay,
   MetOfficeForecast,
   MetOfficeHour,
+  MetOfficeStep,
+  MetOfficeThreeHourly,
 } from "./metoffice-types";
 import type { ConditionKind } from "./weather-format";
 
@@ -49,6 +51,8 @@ const BASE =
  */
 const TTL = 3_600;
 const TTL_DAILY = 10_800;
+/** Three-hourly covers a week; three hours of cache is 8 calls a day. */
+const TTL_THREE_HOURLY = 10_800;
 
 export function hasMetOfficeKey(): boolean {
   return Boolean(process.env.METOFFICE_API_KEY);
@@ -119,6 +123,23 @@ interface RawTimeStep {
   significantWeatherCode?: number;
 
   /*
+   * Hourly fields that were being fetched and thrown away.
+   *
+   * The site-specific API does not support parameter subsetting — every
+   * request returns all 18 hourly parameters whatever you intend to read — so
+   * these cost nothing beyond the call already being made. The dew point in
+   * particular was a live gap: NowPanel reads `dewpointC` for its tile and for
+   * the "Comfortable / Humid" hints, and there was no Met Office field feeding
+   * it, so those went blank the moment the Met Office became the primary.
+   */
+  screenDewPointTemperature?: number;
+  precipitationRate?: number;
+  totalSnowAmount?: number;
+  maxScreenAirTemp?: number;
+  minScreenAirTemp?: number;
+  max10mWindGust?: number;
+
+  /*
    * Daily-only fields. A daily step describes a whole day rather than an
    * instant, so the Met Office splits each measurement into a day and a night
    * half and prefixes it accordingly, and the wind and humidity values are
@@ -150,6 +171,57 @@ interface RawTimeStep {
   middayVisibility?: number;
   midnightVisibility?: number;
   maxUvIndex?: number;
+
+  /*
+   * The daily response carries 41 parameters and the app was reading 19. The
+   * rest are the interesting ones, and they are already in every response.
+   *
+   * The bounds are a real Met Office confidence interval: the lower bound is
+   * the value there is a 97.5% probability of exceeding, the upper the value
+   * there is a 97.5% probability of staying below — a 95% interval on the day's
+   * headline temperature, published per site, for free.
+   */
+  dayLowerBoundMaxTemp?: number;
+  dayUpperBoundMaxTemp?: number;
+  nightLowerBoundMinTemp?: number;
+  nightUpperBoundMinTemp?: number;
+  dayLowerBoundMaxFeelsLikeTemp?: number;
+  dayUpperBoundMaxFeelsLikeTemp?: number;
+  nightLowerBoundMinFeelsLikeTemp?: number;
+  nightUpperBoundMinFeelsLikeTemp?: number;
+
+  /*
+   * Probability by precipitation type, rather than the one blended
+   * probOfPrecipitation the app was showing. "Sferics" is a lightning strike
+   * within 50 km — the Met Office's own answer to a card that currently costs
+   * an Xweather access.
+   */
+  dayProbabilityOfRain?: number;
+  nightProbabilityOfRain?: number;
+  dayProbabilityOfHeavyRain?: number;
+  nightProbabilityOfHeavyRain?: number;
+  dayProbabilityOfSnow?: number;
+  nightProbabilityOfSnow?: number;
+  dayProbabilityOfHeavySnow?: number;
+  nightProbabilityOfHeavySnow?: number;
+  dayProbabilityOfHail?: number;
+  nightProbabilityOfHail?: number;
+  dayProbabilityOfSferics?: number;
+  nightProbabilityOfSferics?: number;
+
+  /*
+   * Three-hourly names its own fields: there is no instantaneous
+   * `screenTemperature` because a three-hour step is a period, and the
+   * feels-like drops the "erature". Read tolerantly, with the hourly names as
+   * fallbacks, so whichever spelling arrives is used.
+   */
+  feelsLikeTemp?: number;
+  probOfRain?: number;
+  probOfHeavyRain?: number;
+  probOfSnow?: number;
+  probOfHeavySnow?: number;
+  probOfHail?: number;
+  probOfSferics?: number;
 }
 
 interface RawResponse {
@@ -180,7 +252,7 @@ interface RawResponse {
  * they read out of `timeSeries`, so that is the only part left to the callers.
  */
 async function fetchTimeSeries(
-  action: "hourly" | "daily",
+  action: "hourly" | "three-hourly" | "daily",
   lat: number,
   lon: number,
   revalidate: number
@@ -298,6 +370,15 @@ export async function getMetOfficeHourly(
         visibilityKM: visM === null ? null : visM / 1000,
         pressureMB: pressurePa === null ? null : pressurePa / 100,
         uvi: num(step.uvIndex),
+        dewPointC: num(step.screenDewPointTemperature),
+        precipRateMMH: num(step.precipitationRate),
+        snowMM: num(step.totalSnowAmount),
+        maxTempC: num(step.maxScreenAirTemp),
+        minTempC: num(step.minScreenAirTemp),
+        maxGustKPH: (() => {
+          const ms = num(step.max10mWindGust);
+          return ms === null ? null : ms * 3.6;
+        })(),
         kind: mapped?.kind ?? "unknown",
         night: mapped?.night ?? false,
       } satisfies MetOfficeHour;
@@ -384,6 +465,40 @@ export async function getMetOfficeDaily(
         dayKind: (dayCode !== null ? WEATHER_CODES[dayCode]?.kind : undefined) ?? "unknown",
         nightKind:
           (nightCode !== null ? WEATHER_CODES[nightCode]?.kind : undefined) ?? "unknown",
+        day: {
+          pop: num(step.dayProbabilityOfPrecipitation),
+          rain: num(step.dayProbabilityOfRain),
+          heavyRain: num(step.dayProbabilityOfHeavyRain),
+          snow: num(step.dayProbabilityOfSnow),
+          heavySnow: num(step.dayProbabilityOfHeavySnow),
+          hail: num(step.dayProbabilityOfHail),
+          sferics: num(step.dayProbabilityOfSferics),
+        },
+        night: {
+          pop: num(step.nightProbabilityOfPrecipitation),
+          rain: num(step.nightProbabilityOfRain),
+          heavyRain: num(step.nightProbabilityOfHeavyRain),
+          snow: num(step.nightProbabilityOfSnow),
+          heavySnow: num(step.nightProbabilityOfHeavySnow),
+          hail: num(step.nightProbabilityOfHail),
+          sferics: num(step.nightProbabilityOfSferics),
+        },
+        maxTempBounds: {
+          lowerC: num(step.dayLowerBoundMaxTemp),
+          upperC: num(step.dayUpperBoundMaxTemp),
+        },
+        minTempBounds: {
+          lowerC: num(step.nightLowerBoundMinTemp),
+          upperC: num(step.nightUpperBoundMinTemp),
+        },
+        maxFeelsLikeBounds: {
+          lowerC: num(step.dayLowerBoundMaxFeelsLikeTemp),
+          upperC: num(step.dayUpperBoundMaxFeelsLikeTemp),
+        },
+        minFeelsLikeBounds: {
+          lowerC: num(step.nightLowerBoundMinFeelsLikeTemp),
+          upperC: num(step.nightUpperBoundMinFeelsLikeTemp),
+        },
       } satisfies MetOfficeDay;
     })
     .filter((day): day is MetOfficeDay => day !== null);
@@ -400,6 +515,93 @@ export async function getMetOfficeDaily(
       siteName: feature?.properties?.location?.name ?? null,
       distanceKM: distance === null ? null : distance / 1000,
       days,
+      modelRunISO:
+        typeof feature?.properties?.modelRunDate === "string"
+          ? feature.properties.modelRunDate
+          : null,
+    },
+    error: null,
+    code: null,
+  };
+}
+
+/**
+ * Three-hourly forecast — 168 hours, so a full week at three-hour resolution.
+ *
+ * The third of the three site-specific actions, and the one the app was not
+ * using. It shares the same free 360-a-day allowance as `hourly` and `daily`,
+ * costs 8 calls a day at this cache, and is the only one of the three that
+ * reaches beyond 48 hours at sub-daily resolution.
+ *
+ * A three-hour step is a *period*, so its field names differ from hourly in
+ * two ways that matter: there is no instantaneous `screenTemperature` (the
+ * temperature arrives as a max and a min over the step), and the feels-like
+ * loses its "erature". Both hourly spellings are accepted as fallbacks so
+ * whichever the gateway actually sends is the one used — the same tolerance
+ * the rest of this file applies, for the same reason.
+ */
+export async function getMetOfficeThreeHourly(
+  lat: number,
+  lon: number
+): Promise<Section<MetOfficeThreeHourly>> {
+  const answer = await fetchTimeSeries("three-hourly", lat, lon, TTL_THREE_HOURLY);
+  if (!answer.ok) return fail<MetOfficeThreeHourly>(answer.error, answer.code);
+  const { feature, steps } = answer;
+
+  const out: MetOfficeStep[] = steps
+    .map((step) => {
+      const time = typeof step.time === "string" ? step.time : null;
+      if (!time) return null;
+      const code = num(step.significantWeatherCode);
+      const mapped = code !== null ? WEATHER_CODES[code] : undefined;
+      const windMS = num(step.windSpeed10m);
+      const gustMS = num(step.windGustSpeed10m);
+      const maxGustMS = num(step.max10mWindGust);
+      const visM = num(step.visibility);
+      const pressurePa = num(step.mslp);
+
+      return {
+        timeISO: time,
+        maxTempC: num(step.maxScreenAirTemp) ?? num(step.screenTemperature),
+        minTempC: num(step.minScreenAirTemp) ?? num(step.screenTemperature),
+        feelsLikeC: num(step.feelsLikeTemp) ?? num(step.feelsLikeTemperature),
+        pop: num(step.probOfPrecipitation),
+        precipMM: num(step.totalPrecipAmount),
+        snowMM: num(step.totalSnowAmount),
+        windKPH: windMS === null ? null : windMS * 3.6,
+        windGustKPH: gustMS === null ? null : gustMS * 3.6,
+        maxGustKPH: maxGustMS === null ? null : maxGustMS * 3.6,
+        windDirDEG: num(step.windDirectionFrom10m),
+        humidity: num(step.screenRelativeHumidity),
+        visibilityKM: visM === null ? null : visM / 1000,
+        pressureMB: pressurePa === null ? null : pressurePa / 100,
+        uvi: num(step.uvIndex),
+        rain: num(step.probOfRain),
+        heavyRain: num(step.probOfHeavyRain),
+        snow: num(step.probOfSnow),
+        hail: num(step.probOfHail),
+        sferics: num(step.probOfSferics),
+        kind: mapped?.kind ?? "unknown",
+        night: mapped?.night ?? false,
+      } satisfies MetOfficeStep;
+    })
+    .filter((step): step is MetOfficeStep => step !== null);
+
+  if (out.length === 0) {
+    return fail<MetOfficeThreeHourly>(
+      "The Met Office response held no usable three-hourly steps.",
+      "bad_response"
+    );
+  }
+
+  const distance = num(feature?.properties?.requestPointDistance);
+
+  return {
+    ok: true,
+    data: {
+      siteName: feature?.properties?.location?.name ?? null,
+      distanceKM: distance === null ? null : distance / 1000,
+      steps: out,
       modelRunISO:
         typeof feature?.properties?.modelRunDate === "string"
           ? feature.properties.modelRunDate

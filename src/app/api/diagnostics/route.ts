@@ -16,7 +16,11 @@ import {
   getTideGauge,
 } from "@/lib/water";
 import { getPollen } from "@/lib/pollen";
-import { getMetOfficeDaily, getMetOfficeHourly } from "@/lib/metoffice";
+import {
+  getMetOfficeDaily,
+  getMetOfficeHourly,
+  getMetOfficeThreeHourly,
+} from "@/lib/metoffice";
 import { getMetNoForecast } from "@/lib/metno";
 import { getWeatherWarnings, regionFor } from "@/lib/warnings";
 import { getAuroraStatus } from "@/lib/aurora";
@@ -132,12 +136,13 @@ export async function GET(request: NextRequest) {
          * three fallback URLs. Firing four EA requests at once here recreates
          * it, so diagnostics has been reporting a fault of its own making.
          */
-        const [marine, pollen, metoffice, metofficeDaily, metno, warnings, aurora, spread, ensemble, climate] =
+        const [marine, pollen, metoffice, metofficeDaily, metofficeThreeHourly, metno, warnings, aurora, spread, ensemble, climate] =
           await Promise.all([
             getMarineConditions(point.lat, point.lon),
             getPollen(point.lat, point.lon),
             getMetOfficeHourly(point.lat, point.lon),
             getMetOfficeDaily(point.lat, point.lon),
+            getMetOfficeThreeHourly(point.lat, point.lon),
             getMetNoForecast(point.lat, point.lon, 6),
             getWeatherWarnings(point.lat, point.lon),
             getAuroraStatus(),
@@ -174,6 +179,15 @@ export async function GET(request: NextRequest) {
              */
             hours: metoffice.data?.hours.length ?? 0,
             site: metoffice.data?.siteName ?? null,
+            /*
+             * The six fields that were being fetched and discarded. Dew point
+             * is the one to watch: NowPanel reads it for a tile and two hints,
+             * so a zero here is a visibly empty card rather than a subtlety.
+             */
+            hoursWithDewPoint:
+              metoffice.data?.hours.filter((h) => h.dewPointC !== null).length ?? 0,
+            hoursWithPrecipRate:
+              metoffice.data?.hours.filter((h) => h.precipRateMMH !== null).length ?? 0,
           },
           {
             endpoint: "Met Office DataHub (site specific, daily)",
@@ -188,6 +202,34 @@ export async function GET(request: NextRequest) {
              */
             daysWithTemp:
               metofficeDaily.data?.days.filter((d) => d.maxTempC !== null).length ?? 0,
+            /*
+             * The confidence card and the per-type chances card each fall back
+             * to something else when their fields are absent, so these two
+             * counts are the only way to tell "the Met Office had nothing to
+             * say" from "the field name is wrong".
+             */
+            daysWithBounds:
+              metofficeDaily.data?.days.filter(
+                (d) => d.maxTempBounds.lowerC !== null && d.maxTempBounds.upperC !== null
+              ).length ?? 0,
+            daysWithTypedProbabilities:
+              metofficeDaily.data?.days.filter(
+                (d) => d.day.rain !== null || d.day.sferics !== null
+              ).length ?? 0,
+          },
+          {
+            endpoint: "Met Office DataHub (site specific, three-hourly)",
+            ok: metofficeThreeHourly.ok,
+            code: metofficeThreeHourly.code,
+            message: metofficeThreeHourly.error,
+            steps: metofficeThreeHourly.data?.steps.length ?? 0,
+            /*
+             * A three-hourly step names its temperature differently from an
+             * hourly one, so this count is what separates a working endpoint
+             * from a working request full of nulls.
+             */
+            stepsWithTemp:
+              metofficeThreeHourly.data?.steps.filter((s) => s.maxTempC !== null).length ?? 0,
           },
           {
             endpoint: "MET Norway locationforecast",

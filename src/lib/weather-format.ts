@@ -923,6 +923,8 @@ export interface LeadForecast {
   current: WeatherPeriod | null;
   hourly: WeatherPeriod[];
   daily: WeatherPeriod[];
+  /** Three-hour steps to a week. Empty when the Met Office is not the lead. */
+  threeHourly: WeatherPeriod[];
   source: "Met Office" | "Xweather" | null;
   /** The Met Office's nearest forecast point, when it is the one on screen. */
   siteName: string | null;
@@ -951,6 +953,7 @@ export function leadForecast(sections: {
     current: WeatherPeriod | null;
     hourly: WeatherPeriod[];
     daily: WeatherPeriod[];
+    threeHourly: WeatherPeriod[];
   }>;
   current?: Section<ConditionsResponse>;
   hourly?: Section<ConditionsResponse>;
@@ -971,6 +974,7 @@ export function leadForecast(sections: {
         lead.data.daily.length > 0
           ? lead.data.daily
           : (sections.daily?.data?.periods ?? []),
+      threeHourly: lead.data.threeHourly,
       source: "Met Office",
       siteName: lead.data.siteName,
       distanceKM: lead.data.distanceKM,
@@ -986,6 +990,7 @@ export function leadForecast(sections: {
     current,
     hourly: sections.hourly?.data?.periods ?? [],
     daily: sections.daily?.data?.periods ?? [],
+    threeHourly: [],
     source: current ? "Xweather" : null,
     siteName: null,
     distanceKM: null,
