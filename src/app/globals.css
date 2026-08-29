@@ -479,6 +479,15 @@ body {
   font-weight: 500;
 }
 
+/*
+ * Provenance under the hero condition. Deliberately quiet: it qualifies the
+ * temperature above it without competing with it.
+ */
+.wx-hero-source {
+  margin: 0.35rem 0 0;
+  letter-spacing: 0.01em;
+}
+
 .wx-hero-facts {
   display: flex;
   flex-wrap: wrap;

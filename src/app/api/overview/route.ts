@@ -1,18 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getAirQuality,
-  getAirQualityForecast,
-  getAlerts,
-  getCurrentConditions,
-  getDailyForecast,
   getHourlyForecast,
-  getLightningSummary,
-  getMinutely,
-  getObservation,
-  getPhrase,
-  getRecentConditions,
-  getSunMoon,
-  getThreats,
   hasCredentials,
   httpStatusForCode,
   resolvePlace,
@@ -31,6 +19,9 @@ import {
   metOfficeToStepPeriods,
 } from "@/lib/metoffice-periods";
 import { getMetNoForecast } from "@/lib/metno";
+import { getAirQuality as getOpenMeteoAirQuality } from "@/lib/airquality";
+import { getNowcast, getRecent as getOpenMeteoRecent } from "@/lib/openmeteo";
+import { getSunMoon as computeSunMoon } from "@/lib/sunmoon";
 import { getWeatherWarnings } from "@/lib/warnings";
 import { getAuroraStatus } from "@/lib/aurora";
 import { getModelSpread } from "@/lib/models";
@@ -79,20 +70,17 @@ export async function GET(request: NextRequest) {
   // describe exactly the same point on the map.
   const point = `${resolved.data.lat},${resolved.data.lon}`;
 
+  /* The location's own UTC offset, so every converted source reads local. */
+  const offsetMinutes =
+    typeof resolved.data.tzoffset === "number"
+      ? Math.round(resolved.data.tzoffset / 60)
+      : null;
+
   const [
-    current,
-    observation,
-    minutely,
     hourly,
-    daily,
-    alerts,
-    airQuality,
-    airQualityForecast,
-    sunMoon,
-    threats,
-    lightning,
-    phrase,
+    minutely,
     recent,
+    airQuality,
     pollen,
     metoffice,
     metofficeDaily,
@@ -103,26 +91,29 @@ export async function GET(request: NextRequest) {
     modelSpread,
     ensemble,
   ] = await Promise.all([
-    getCurrentConditions(point),
-    getObservation(point),
-    getMinutely(point),
+    /*
+     * The only Xweather call left on this route.
+     *
+     * Xweather does two jobs now: the raster maps, which nothing else here can
+     * do, and this — the second opinion the comparison card is built on. Every
+     * other data set it used to supply either moved to the Met Office (which
+     * publishes it better for the UK) or to a keyless source that was already
+     * being called. That took the route from fifteen Xweather accesses a load
+     * to two, counting the place resolve.
+     *
+     * It is deliberately the *forecast* rather than current conditions: the
+     * comparison matches by absolute instant across a 48-hour window, so a
+     * single observation would give it one point to compare.
+     */
     getHourlyForecast(point, 48),
-    getDailyForecast(point, 10),
-    getAlerts(point),
-    getAirQuality(point),
-    getAirQualityForecast(point, 24),
-    getSunMoon(point),
-    getThreats(point),
-    getLightningSummary(point, 50),
-    getPhrase(point),
-    getRecentConditions(point, 24),
-    getPollen(
+    getNowcast(
       resolved.data.lat,
       resolved.data.lon,
-      typeof resolved.data.tzoffset === "number"
-        ? Math.round(resolved.data.tzoffset / 60)
-        : null
+      offsetMinutes
     ),
+    getOpenMeteoRecent(resolved.data.lat, resolved.data.lon, offsetMinutes, 24),
+    getOpenMeteoAirQuality(resolved.data.lat, resolved.data.lon, offsetMinutes, 48),
+    getPollen(resolved.data.lat, resolved.data.lon, offsetMinutes),
     getMetOfficeHourly(resolved.data.lat, resolved.data.lon),
     getMetOfficeDaily(resolved.data.lat, resolved.data.lon),
     getMetOfficeThreeHourly(resolved.data.lat, resolved.data.lon),
@@ -204,23 +195,36 @@ export async function GET(request: NextRequest) {
           code: metoffice.code,
         };
 
+  /*
+   * Sun and moon are computed rather than fetched — see lib/sunmoon.ts. It
+   * sits outside the fan-out above because there is nothing to await: it is
+   * arithmetic on the resolved coordinates, which is why it costs nothing and
+   * cannot fail upstream.
+   */
+  const sunMoon = computeSunMoon(resolved.data.lat, resolved.data.lon);
+
   const payload: WeatherOverview = {
     place: resolved.data,
     fetchedAt: new Date().toISOString(),
     sections: {
-      current,
-      observation,
+      /*
+       * What is gone from here matters as much as what is left.
+       *
+       * `current`, `observation`, `daily`, `alerts`, `threats`, `lightning`,
+       * `phrase` and `airQualityForecast` were all Xweather and are all
+       * retired: the forecast ones because the Met Office publishes them
+       * better for the UK, the alerts because NSWWS is the authoritative UK
+       * publisher and Xweather's NWS-derived network returned nothing here
+       * anyway, and the rest because a keyless source already in the app
+       * covers them. The section map is Partial by design, so a consumer that
+       * still reaches for one gets undefined and renders its notice rather
+       * than breaking — which is the whole point of convention 4.
+       */
       minutely,
       hourly,
-      daily,
       dayNight,
-      alerts,
       airQuality,
-      airQualityForecast,
       sunMoon,
-      threats,
-      lightning,
-      phrase,
       recent,
       pollen,
       metoffice,

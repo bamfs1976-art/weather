@@ -9,7 +9,6 @@ import { ForecastPanel } from "@/components/ForecastPanel";
 import { RecentPanel } from "@/components/RecentPanel";
 import { WeatherHistoryPanel } from "@/components/WeatherHistoryPanel";
 import { AirSunPanel } from "@/components/AirSunPanel";
-import { MetOfficePanel } from "@/components/MetOfficePanel";
 import { WaterPanel } from "@/components/WaterPanel";
 import { LocalPanel } from "@/components/LocalPanel";
 import { Logo } from "@/components/Logo";
@@ -18,15 +17,28 @@ import { CardSkeleton, Notice } from "@/components/ui";
 import { relativeFromNow } from "@/lib/weather-format";
 import type { ThemeName, UnitSystem, WeatherOverview } from "@/lib/weather-types";
 
+/*
+ * The Met Office is the feed, so it no longer has a tab of its own.
+ *
+ * A separate "Met Office" tab made sense when it was a second opinion sitting
+ * beside Xweather's numbers. Now that it supplies the headline figures on Now,
+ * Hourly and 7-day, a tab named after the provider would be a tab named after
+ * the app. What was unique to it — the forecast point and model run age — moved
+ * into the hero, where it qualifies the numbers it describes; the warnings and
+ * the Xweather comparison were already on Now and Hourly.
+ *
+ * "7-day", not "10-day": the site-specific daily action publishes seven, and a
+ * tab promising ten while showing seven is the kind of small lie that makes a
+ * reader distrust the rest of the page.
+ */
 const TABS = [
   { id: "now", label: "Now" },
   { id: "hourly", label: "Hourly" },
-  { id: "forecast", label: "10-day" },
+  { id: "forecast", label: "7-day" },
   { id: "recent", label: "Last 24h" },
   { id: "history", label: "History" },
   { id: "water", label: "Rivers & Sea" },
   { id: "air", label: "Air & Sun" },
-  { id: "metoffice", label: "Met Office" },
   { id: "local", label: "Local" },
 ] as const;
 
@@ -314,9 +326,6 @@ export default function WeatherPage() {
             )}
             {tab === "air" && (
               <AirSunPanel overview={overview} units={units} hour12={hour12} />
-            )}
-            {tab === "metoffice" && (
-              <MetOfficePanel overview={overview} units={units} hour12={hour12} />
             )}
             {tab === "local" && place && (
               <LocalPanel placeQuery={place.query} hour12={hour12} />

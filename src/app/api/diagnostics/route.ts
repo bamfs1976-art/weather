@@ -22,6 +22,9 @@ import {
   getMetOfficeThreeHourly,
 } from "@/lib/metoffice";
 import { getMetNoForecast } from "@/lib/metno";
+import { getAirQuality as getOpenMeteoAirQuality } from "@/lib/airquality";
+import { getNowcast, getRecent as getOpenMeteoRecent } from "@/lib/openmeteo";
+import { getSunMoon as computeSunMoon } from "@/lib/sunmoon";
 import { getWeatherWarnings, regionFor } from "@/lib/warnings";
 import { getAuroraStatus } from "@/lib/aurora";
 import { getModelSpread, MODELS } from "@/lib/models";
@@ -78,6 +81,17 @@ export async function GET(request: NextRequest) {
   }
 
   const loc = encodeURIComponent(place);
+  /*
+   * Every endpoint the app *could* reach, not every endpoint it now uses.
+   *
+   * The overview route makes exactly two Xweather calls — a place resolve and
+   * the hourly forecast the comparison card needs — plus the raster maps. The
+   * rest of this sweep is kept deliberately: knowing which data sets a key
+   * unlocks is the question this route exists to answer, and it is worth
+   * asking again on the day a plan changes or a card is brought back. It only
+   * costs an access when someone runs it, which is the whole point of having
+   * moved these off the per-load path.
+   */
   const checks: { name: string; path: string; params?: Record<string, string> }[] = [
     { name: "places", path: `places/${loc}` },
     { name: "places/search", path: "places/search", params: { query: "name:^lond", limit: "3" } },
@@ -150,6 +164,13 @@ export async function GET(request: NextRequest) {
             getEnsemble(point.lat, point.lon, 6),
             getClimateContext(point.lat, point.lon),
           ]);
+        const [air, nowcast, trailing] = await Promise.all([
+          getOpenMeteoAirQuality(point.lat, point.lon, null, 24),
+          getNowcast(point.lat, point.lon, null),
+          getOpenMeteoRecent(point.lat, point.lon, null, 24),
+        ]);
+        const sun = computeSunMoon(point.lat, point.lon);
+
         const floods = await getFloodWarnings(point.lat, point.lon, 30);
         const rivers = await getRiverStations(point.lat, point.lon, 20, 2);
         const tides = await getTideGauge(point.lat, point.lon);
@@ -167,6 +188,31 @@ export async function GET(request: NextRequest) {
           { endpoint: "EA flood-monitoring: tide gauge", ok: tides.ok, code: tides.code, message: tides.error, via: tides.data?.via ?? null, readings: tides.data?.readings.length ?? 0 },
           { endpoint: "Defra/NRW bathing water quality", ok: bathing.ok, code: bathing.code, message: bathing.error, via: bathing.data?.[0]?.via ?? null, found: bathing.data?.length ?? 0 },
           { endpoint: "Open-Meteo Marine", ok: marine.ok, code: marine.code, message: marine.error },
+          {
+            endpoint: "Open-Meteo air quality (European AQI)",
+            ok: air.ok, code: air.code, message: air.error,
+            hours: air.data?.periods.length ?? 0,
+            aqiNow: air.data?.periods[0]?.aqi ?? null,
+          },
+          {
+            endpoint: "Open-Meteo nowcast (15-minute)",
+            ok: nowcast.ok, code: nowcast.code, message: nowcast.error,
+            steps: nowcast.data?.periods.length ?? 0,
+          },
+          {
+            endpoint: "Open-Meteo trailing 24h",
+            ok: trailing.ok, code: trailing.code, message: trailing.error,
+            hours: trailing.data?.periods.length ?? 0,
+          },
+          {
+            /* No upstream: pure arithmetic on the coordinates. Reported so a
+             * wrong-looking sunrise can be told from a missing one. */
+            endpoint: "Sun & moon (computed locally)",
+            ok: sun.ok, code: sun.code, message: sun.error,
+            sunrise: sun.data?.sun?.riseISO ?? null,
+            sunset: sun.data?.sun?.setISO ?? null,
+            moonPhase: sun.data?.moon?.phase?.name ?? null,
+          },
           { endpoint: "Open-Meteo air quality (pollen)", ok: pollen.ok, code: pollen.code, message: pollen.error },
           {
             endpoint: "Met Office DataHub (site specific, hourly)",

@@ -381,19 +381,25 @@ export interface WeatherOverview {
   place: ResolvedPlace;
   fetchedAt: string;
   sections: Partial<{
-    current: Section<ConditionsResponse>;
-    observation: Section<ObservationResponse>;
+    /**
+     * Precipitation for the next hour, from Open-Meteo's 15-minute series.
+     * A model nowcast, not the radar-blended one Xweather published.
+     */
     minutely: Section<{ periods: MinutelyPeriod[] }>;
+    /**
+     * **The only Xweather forecast left.** It exists for the comparison card
+     * — the second opinion against the Met Office — not to be rendered as the
+     * page's own numbers. `leadForecast` will fall back to it if the Met
+     * Office is unreachable, which is the one case where it does show.
+     */
     hourly: Section<ConditionsResponse>;
-    daily: Section<ConditionsResponse>;
+    /** Day and night halves, derived from the Met Office daily response. */
     dayNight: Section<ConditionsResponse>;
-    alerts: Section<AlertItem[]>;
+    /** European AQI and pollutants, CAMS via Open-Meteo. */
     airQuality: Section<AirQualityResponse>;
-    airQualityForecast: Section<AirQualityResponse>;
+    /** Computed locally from the coordinates — no upstream at all. */
     sunMoon: Section<SunMoonResponse>;
-    threats: Section<ThreatItem[]>;
-    lightning: Section<LightningSummaryResponse>;
-    phrase: Section<{ periods: { text?: string; weatherPrimary?: string }[] }>;
+    /** The trailing 24 hours, from Open-Meteo's past-days series. */
     recent: Section<ConditionsResponse>;
     /** Not Xweather — CAMS pollen via Open-Meteo, folded in here so the
      *  dashboard still loads everything in one request. */

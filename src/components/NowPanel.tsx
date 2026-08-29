@@ -1,13 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import { WarningBanner } from "./WarningBanner";
 import { Card, Chip, EmptyState, Meter, Metric, SectionBody, WindArrow } from "./ui";
 import { WeatherHero } from "./WeatherHero";
 import { MetricTile, RadialRing, Sparkline, UVScale, WindCompass } from "./MetricTile";
 import { SunArc } from "./SunArc";
 import { ForecastComparison } from "./ForecastComparison";
-import { CloudLightningIcon, ConditionIcon, SunIcon } from "./icons";
+import { ConditionIcon, SunIcon } from "./icons";
 import { SeriesChart } from "./Chart";
 import { MapPanel } from "./MapPanel";
 import {
@@ -27,7 +26,6 @@ import {
   isNum,
   nextPrecipitation,
   pressureTrend,
-  relativeFromNow,
   uviCategory,
   windDescription,
   leadForecast,
@@ -68,7 +66,6 @@ export function NowPanel({
           warnings={sections.warnings.data.warnings}
         />
       )}
-      <AlertsBlock overview={overview} hour12={hour12} />
 
       <WeatherHero overview={overview} units={units} hour12={hour12} />
 
@@ -217,9 +214,10 @@ export function NowPanel({
 
       <Card
         title="Full conditions"
-        subtitle="Interpolated for the exact coordinates, blending station, radar and model data"
+        subtitle="Every field the forecast publishes for this hour"
+        source={lead.source === "Met Office" ? "Met Office DataHub" : "Vaisala Xweather"}
       >
-        <SectionBody section={sections.current}>
+        <SectionBody section={lead.hourlySection}>
           {() => (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
               <Metric
@@ -311,150 +309,6 @@ export function NowPanel({
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card
-          title="Nearest reporting station"
-          subtitle="Raw observation behind the interpolated numbers above"
-        >
-          <SectionBody section={sections.observation}>
-            {(data) => (
-              <div className="space-y-3">
-                <div>
-                  <div className="text-base font-medium">
-                    {data.place?.name
-                      ? data.place.name.replace(/\b\w/g, (c) => c.toUpperCase())
-                      : data.id}
-                  </div>
-                  <div className="wx-muted text-xs">
-                    Station {data.id}
-                    {data.relativeTo &&
-                      ` · ${formatDistance(
-                        data.relativeTo.distanceKM,
-                        data.relativeTo.distanceMI,
-                        units
-                      )} ${data.relativeTo.bearingENG} of you`}
-                    {data.ob?.dateTimeISO &&
-                      ` · reported ${relativeFromNow(data.ob.dateTimeISO)}`}
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  <Metric
-                    label="Temp"
-                    value={formatTemp(data.ob?.tempC, data.ob?.tempF, units)}
-                  />
-                  <Metric
-                    label="Dew point"
-                    value={formatTemp(data.ob?.dewpointC, data.ob?.dewpointF, units)}
-                  />
-                  <Metric
-                    label="Wind"
-                    value={formatSpeed(
-                      data.ob?.windSpeedKPH,
-                      data.ob?.windSpeedMPH,
-                      units
-                    )}
-                  />
-                  <Metric
-                    label="Pressure"
-                    value={formatPressure(
-                      data.ob?.pressureMB,
-                      data.ob?.pressureIN,
-                      units
-                    )}
-                  />
-                  <Metric
-                    label="Visibility"
-                    value={formatDistance(
-                      data.ob?.visibilityKM,
-                      data.ob?.visibilityMI,
-                      units
-                    )}
-                  />
-                  <Metric
-                    label="Quality"
-                    value={data.ob?.QC ?? dash}
-                    hint={
-                      isNum(data.ob?.trustFactor)
-                        ? `trust ${data.ob?.trustFactor}`
-                        : undefined
-                    }
-                  />
-                </div>
-              </div>
-            )}
-          </SectionBody>
-        </Card>
-
-        <Card title="Nearby hazards" subtitle="Active threats and lightning in the last hour">
-          <div className="space-y-3">
-            <SectionBody section={sections.threats} empty="No threat data.">
-              {(threats) =>
-                threats.length === 0 ? (
-                  <p className="text-sm wx-good-text">
-                    No active weather threats near this location.
-                  </p>
-                ) : (
-                  <ul className="space-y-2">
-                    {threats.map((threat, index) => (
-                      <li key={threat.id ?? index} className="wx-inset px-3 py-2 text-sm">
-                        <span className="font-medium">
-                          {threat.name ?? threat.type ?? "Threat"}
-                        </span>
-                        {isNum(threat.distanceKM) && (
-                          <span className="wx-muted">
-                            {" "}
-                            ·{" "}
-                            {formatDistance(
-                              threat.distanceKM,
-                              threat.distanceMI,
-                              units
-                            )}{" "}
-                            {threat.bearingENG ?? ""}
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )
-              }
-            </SectionBody>
-
-            <SectionBody section={sections.lightning} empty="Lightning data unavailable.">
-              {(lightning) => {
-                const count =
-                  lightning.summary?.count ??
-                  lightning.count ??
-                  lightning.periods?.[0]?.summary?.count ??
-                  0;
-                const cg =
-                  lightning.summary?.cg ?? lightning.periods?.[0]?.summary?.cg ?? null;
-                const nearest =
-                  lightning.summary?.distance?.minKM ??
-                  lightning.periods?.[0]?.summary?.distance?.minKM ??
-                  null;
-                return (
-                  <div className="wx-inset px-3 py-2 text-sm">
-                    <span className="mr-1.5 inline-flex align-[-3px]" style={{ color: "var(--wx-warn)" }} aria-hidden>
-                      <CloudLightningIcon size={16} />
-                    </span>
-                    {count > 0 ? (
-                      <>
-                        <span className="font-medium">{count.toLocaleString()}</span>{" "}
-                        strikes within 50 km in the last hour
-                        {isNum(cg) && ` (${cg.toLocaleString()} cloud-to-ground)`}
-                        {isNum(nearest) &&
-                          ` · nearest ${formatDistance(nearest, nearest * 0.621371, units)}`}
-                      </>
-                    ) : (
-                      <span className="wx-muted">
-                        No lightning within 50 km in the last hour.
-                      </span>
-                    )}
-                  </div>
-                );
-              }}
-            </SectionBody>
-          </div>
-        </Card>
       </div>
 
       {/* The map lives on the main view — it is what people look at most. */}
@@ -482,7 +336,7 @@ function NextRainCard({
   const { sections } = overview;
   const minutely = sections.minutely?.data?.periods ?? [];
   const hourly = sections.hourly?.data?.periods ?? [];
-  const daily = sections.daily?.data?.periods ?? [];
+  const daily = leadForecast(sections).daily;
 
   if (
     minutely.length === 0 &&
@@ -631,71 +485,6 @@ function humidityComfort(dewpointC: number | null | undefined): string | undefin
   return "Oppressive";
 }
 
-function AlertsBlock({
-  overview,
-  hour12,
-}: {
-  overview: WeatherOverview;
-  hour12: boolean;
-}) {
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const section = overview.sections.alerts;
-
-  if (!section?.ok || !section.data || section.data.length === 0) return null;
-
-  return (
-    <div className="space-y-2">
-      {section.data.map((alert) => {
-        const details = alert.details ?? {};
-        const color = details.color ? `#${details.color.replace("#", "")}` : "#f59e0b";
-        const isOpen = expanded === alert.id;
-        return (
-          <article
-            key={alert.id}
-            className="wx-card overflow-hidden border-l-4"
-            style={{ borderLeftColor: color }}
-          >
-            <button
-              type="button"
-              className="flex w-full items-start justify-between gap-3 p-4 text-left"
-              onClick={() => setExpanded(isOpen ? null : alert.id)}
-              aria-expanded={isOpen}
-            >
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-base font-semibold" style={{ color }}>
-                    {details.name ?? details.type ?? "Weather alert"}
-                  </span>
-                  {details.emergency && <Chip tone="danger">Emergency</Chip>}
-                </div>
-                <div className="wx-muted mt-1 text-xs">
-                  {details.loc && <span>{details.loc} · </span>}
-                  {alert.timestamps?.beginsISO && (
-                    <span>
-                      from {formatTime(alert.timestamps.beginsISO, hour12)}
-                    </span>
-                  )}
-                  {alert.timestamps?.expiresISO && (
-                    <span>
-                      {" "}
-                      until {formatTime(alert.timestamps.expiresISO, hour12)}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <span className="wx-muted shrink-0 text-sm">{isOpen ? "▲" : "▼"}</span>
-            </button>
-            {isOpen && (details.bodyFull || details.body) && (
-              <pre className="wx-muted max-h-96 overflow-auto whitespace-pre-wrap border-t border-[var(--wx-border)] px-4 py-3 text-xs leading-relaxed">
-                {details.bodyFull ?? details.body}
-              </pre>
-            )}
-          </article>
-        );
-      })}
-    </div>
-  );
-}
 
 function MinutelyBlock({
   overview,

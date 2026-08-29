@@ -122,7 +122,7 @@ export function AirSunPanel({
       <PollenCard overview={overview} hour12={hour12} />
 
       <Card title="Air quality forecast" subtitle="Next 24 hours">
-        <SectionBody section={sections.airQualityForecast}>
+        <SectionBody section={sections.airQuality}>
           {(data) => {
             const periods = data.periods ?? [];
             if (periods.length === 0) {
@@ -219,7 +219,7 @@ export function AirSunPanel({
       <Card
         title="Sun & moon"
         subtitle="Daylight, twilight and lunar detail for today"
-        source="Vaisala Xweather"
+        source="Copernicus CAMS via Open-Meteo"
       >
         <SectionBody section={sections.sunMoon}>
           {() => (

@@ -9,6 +9,7 @@ import {
   formatPercent,
   formatSpeed,
   formatTemp,
+  formatDistance,
   isNum,
   skyMotion,
   skyToken,
@@ -91,6 +92,24 @@ export function WeatherHero({
           {current?.weather ?? current?.weatherPrimary ?? dash}
         </p>
 
+        {/*
+          * Who these numbers belong to, and how near the point they describe
+          * actually is. This moved here from the Met Office tab when that tab
+          * was folded away: provenance belongs against the number it qualifies,
+          * and the Met Office forecasts a grid point rather than the exact
+          * coordinates, so "1.4 km away" is a real caveat on the temperature
+          * above it rather than trivia.
+          */}
+        {lead.source && (
+          <p className="wx-hero-source wx-dim text-xs">
+            {lead.source}
+            {lead.siteName ? ` · ${lead.siteName}` : ""}
+            {isNum(lead.distanceKM)
+              ? ` · ${formatDistance(lead.distanceKM, lead.distanceKM * 0.621371, units)} away`
+              : ""}
+          </p>
+        )}
+
         <div className="wx-hero-facts">
           <span>
             Feels like{" "}
@@ -126,9 +145,6 @@ export function WeatherHero({
           )}
         </div>
 
-        {sections.phrase?.data?.periods?.[0]?.text && (
-          <p className="wx-hero-phrase">{sections.phrase?.data.periods[0].text}</p>
-        )}
       </div>
     </section>
   );

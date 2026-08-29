@@ -4,9 +4,39 @@ Guidance for AI assistants (Claude, etc.) working in this repository.
 
 ## Project overview
 
-A personal weather dashboard on the Vaisala Xweather Weather API. Single Next.js
-app: one page with seven tabbed views (Now, Hourly, 10-day, Last 24h, History,
-Air & Sun, Maps).
+A personal weather dashboard for Swansea. **The Met Office is the data feed;
+Xweather does the maps and the second opinion, and nothing else.** Single
+Next.js app: one page with tabbed views (Now, Hourly, 7-day, Last 24h, History,
+Rivers & Sea, Air & Sun, Local, Maps).
+
+**One dashboard load costs two Xweather accesses** — a `places` resolve and the
+hourly forecast the comparison card compares against — down from fifteen. Every
+other data set it used to supply moved to the Met Office, to a keyless source
+already in the app, or (sun and moon) to arithmetic.
+
+| What | Where it comes from now |
+|------|-------------------------|
+| Current, hourly, 7-day, day/night | Met Office site-specific |
+| Severe weather warnings | MeteoAlarm CAP → NSWWS RSS |
+| Maps | Xweather rasters |
+| Second opinion | Xweather hourly + MET Norway |
+| Nowcast (next hour) | Open-Meteo `minutely_15` |
+| Last 24 hours | Open-Meteo `past_days` |
+| Air quality | Open-Meteo (CAMS), European AQI |
+| Pollen | Open-Meteo (CAMS) |
+| **Sun & moon** | **computed locally — no upstream at all** |
+| Model spread, ensemble, ERA5 | Open-Meteo |
+| Rivers, tides, floods | Environment Agency |
+
+**Retired, deliberately:** Xweather's `conditions`, `observations`,
+`forecasts` (daily and daynight), `alerts`, `airquality`, `sunmoon`, `threats`,
+`lightning/summary` and `phrases/summary`. The forecast ones because the Met
+Office publishes them better for the UK; `alerts` because NSWWS is the
+authoritative UK publisher and Xweather's NWS-derived network returned nothing
+for Swansea anyway; the rest because something free already covered them. They
+are still in `xweather.ts` and still swept by `/api/diagnostics` — knowing what
+a key unlocks is worth asking on the day a plan changes — but nothing calls
+them on the per-load path.
 
 **Stack:** Next.js 16 (App Router) · TypeScript (strict) · Tailwind CSS v4 ·
 Vaisala Xweather API. Runtime dependencies are Next, React and React DOM only —
@@ -183,6 +213,31 @@ is an access too**, which is the part that is easy to forget.
   `R`/`ZR` rain, `WM` wintry mix, `SC` partly, `BK` mostly, `FW` fair. Twenty-two
   mappings are covered by a test — check the codes against Xweather's list
   rather than from memory, which got five of them wrong in one sitting.
+
+## Sun and moon are computed, not fetched
+
+`lib/sunmoon.ts` is the one data set with no upstream: NOAA's solar equations
+and Meeus's lunar ephemeris, pure and synchronous. It returns a `Section` like
+everything else so `SectionBody` and the degrade-don't-throw rule still apply.
+
+**The accuracy is measured, not assumed, and the presentation depends on it.**
+Day length at 51.6°N comes out 16 h 40 m at the summer solstice and 7 h 49 m at
+the winter; the transit tracks the equation of time across its full ±16 minute
+swing; rise and set are symmetric about the transit to the second. Moon rise and
+set land within a few minutes, and the day-to-day shift varies between 30 and 66
+minutes — that spread is the moon's changing declination, not noise. Over six
+years the model gives 74 new moons at a mean synodic month of 29.522 days
+against a true 29.531, so the phase instant runs ~12 minutes early per month;
+illumination is taken from the instantaneous elongation instead of that
+accumulating count, and lands on 0.000 and 1.000 at new and full.
+
+- **The single-term lunar longitude is not enough.** The 6.289° equation of the
+  centre alone — where most one-file implementations stop — put successive new
+  moons 29.25 days apart. Evection, variation and the annual equation fix it.
+- **A missing horizon crossing is ambiguous**: it means the sun never reaches
+  that altitude, which is midnight sun in one hemisphere and polar night in the
+  other. The sun's altitude at transit decides which, and both are reported as
+  their own field rather than as a null time.
 
 ## Met Office is the primary forecast
 
