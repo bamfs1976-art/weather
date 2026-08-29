@@ -6,6 +6,7 @@
 import type { WeatherWarning } from "./warning-types";
 import type {
   ConditionsResponse,
+  MinutelyPeriod,
   Section,
   UnitSystem,
   WeatherPeriod,
@@ -997,4 +998,173 @@ export function leadForecast(sections: {
     hourlySection: sections.hourly,
     dailySection: sections.daily,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Rain outlook — the "is it about to rain" question                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Rainfall intensity bands, in millimetres per hour.
+ *
+ * The conventional meteorological cuts: light below 2.5, moderate to 7.6,
+ * heavy above. The extra band below 0.5 exists because the difference between
+ * "you will notice this" and "you will need a coat" is the whole point of a
+ * card like this, and one label spanning 0.1 to 2.4 mm/h loses it.
+ */
+export type RainIntensity = "none" | "spots" | "light" | "moderate" | "heavy";
+
+export function rainIntensity(mmPerHour: number | null | undefined): RainIntensity {
+  if (!isNum(mmPerHour) || mmPerHour < 0.1) return "none";
+  if (mmPerHour < 0.5) return "spots";
+  if (mmPerHour < 2.5) return "light";
+  if (mmPerHour < 7.6) return "moderate";
+  return "heavy";
+}
+
+export const RAIN_INTENSITY_LABEL: Record<RainIntensity, string> = {
+  none: "Dry",
+  spots: "Spots of rain",
+  light: "Light rain",
+  moderate: "Moderate rain",
+  heavy: "Heavy rain",
+};
+
+export interface RainOutlook {
+  /** Nothing above the "spots" threshold anywhere in the window. */
+  dry: boolean;
+  /** The first step is already wet — "it is raining now", not "rain is coming". */
+  rainingNow: boolean;
+  /** When rain starts, if it has not already. Null when dry or already raining. */
+  startsISO: string | null;
+  /**
+   * When the current or coming spell ends, if it does so inside the window.
+   * Null means "still raining when the forecast runs out", which is a
+   * different statement from "stops at the end" and must not be shown as one.
+   */
+  endsISO: string | null;
+  /**
+   * The wettest step **of the spell being described** — the one happening now
+   * or starting at `startsISO` — and how wet it gets.
+   *
+   * Not the wettest step in the whole window, which is a different number and
+   * the wrong one for the headline: a light shower in fifteen minutes followed
+   * by a downpour in an hour would otherwise be announced as "Moderate rain in
+   * 15 min", describing the imminent spell with a later one's intensity.
+   */
+  peakISO: string | null;
+  peakMMH: number | null;
+  peak: RainIntensity;
+  /** The wettest step anywhere in the window, for the "heaviest at" line. */
+  windowPeakISO: string | null;
+  windowPeakMMH: number | null;
+  windowPeak: RainIntensity;
+  /** True when the window holds more than one distinct spell of rain. */
+  moreLater: boolean;
+  /** How far ahead the forecast actually looked. */
+  windowMinutes: number;
+}
+
+/**
+ * Read a rain outlook out of a sub-hourly precipitation series.
+ *
+ * Pure, and takes no clock: every answer is an instant from the series itself,
+ * so the caller decides what "in 25 minutes" means against its own `now`. That
+ * keeps this testable and keeps the hydration hazard in one place — the
+ * component — rather than baked into a value the server computed and shipped.
+ */
+export function rainOutlook(periods: MinutelyPeriod[]): RainOutlook {
+  const steps = periods
+    .map((p) => ({
+      iso: p.dateTimeISO ?? null,
+      at: Date.parse(p.dateTimeISO ?? ""),
+      /* The rate is what the bands are defined against; fall back to the
+       * accumulation only when no rate was published. */
+      mmh: isNum(p.precipRateMM) ? p.precipRateMM : isNum(p.precipMM) ? p.precipMM : 0,
+    }))
+    .filter((s) => s.iso !== null && Number.isFinite(s.at));
+
+  const empty: RainOutlook = {
+    dry: true,
+    rainingNow: false,
+    startsISO: null,
+    endsISO: null,
+    peakISO: null,
+    peakMMH: null,
+    peak: "none",
+    windowPeakISO: null,
+    windowPeakMMH: null,
+    windowPeak: "none",
+    moreLater: false,
+    windowMinutes: 0,
+  };
+  if (steps.length === 0) return empty;
+
+  const windowMinutes = Math.round((steps[steps.length - 1].at - steps[0].at) / 60_000);
+  const wet = (mmh: number) => rainIntensity(mmh) !== "none";
+
+  const peakStep = steps.reduce((best, s) => (s.mmh > best.mmh ? s : best), steps[0]);
+  const anyWet = steps.some((s) => wet(s.mmh));
+
+  if (!anyWet) return { ...empty, windowMinutes };
+
+  const rainingNow = wet(steps[0].mmh);
+  const firstWet = steps.findIndex((s) => wet(s.mmh));
+
+  /*
+   * The end of *this* spell, not of all rain in the window: a shower that
+   * stops and starts again should read "until 14:30", not "until 16:00". So
+   * the search runs forward from the first wet step and stops at the first dry
+   * one after it.
+   */
+  let endsISO: string | null = null;
+  let spellEnd = steps.length;
+  for (let i = firstWet; i < steps.length; i += 1) {
+    if (!wet(steps[i].mmh)) {
+      endsISO = steps[i].iso;
+      spellEnd = i;
+      break;
+    }
+  }
+
+  /* The peak of this spell only — see the note on `peakISO`. */
+  const spell = steps.slice(firstWet, spellEnd);
+  const spellPeak = spell.reduce((best, s) => (s.mmh > best.mmh ? s : best), spell[0]);
+
+  return {
+    dry: false,
+    rainingNow,
+    startsISO: rainingNow ? null : steps[firstWet].iso,
+    endsISO,
+    peakISO: spellPeak.iso,
+    peakMMH: spellPeak.mmh,
+    peak: rainIntensity(spellPeak.mmh),
+    windowPeakISO: peakStep.iso,
+    windowPeakMMH: peakStep.mmh,
+    windowPeak: rainIntensity(peakStep.mmh),
+    /* Another spell after this one ends — worth saying, because "until 12:30"
+     * on its own implies the rest of the window is dry. */
+    moreLater: steps.slice(spellEnd).some((st) => wet(st.mmh)),
+    windowMinutes,
+  };
+}
+
+/**
+ * "in 25 min", "in 1 h 10", or null when there is no clock yet.
+ *
+ * Returns null rather than a guess when `now` is 0, which is what `useNow()`
+ * reports before the browser takes over — the caller shows the absolute time
+ * on that first paint instead, so the first render is less specific rather
+ * than wrong.
+ */
+export function minutesUntilLabel(iso: string | null, now: number): string | null {
+  if (!iso || now === 0) return null;
+  const at = Date.parse(iso);
+  if (!Number.isFinite(at)) return null;
+  const minutes = Math.round((at - now) / 60_000);
+  if (minutes <= 0) return "now";
+  if (minutes < 60) return `in ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `in ${hours} h` : `in ${hours} h ${rest}`;
 }

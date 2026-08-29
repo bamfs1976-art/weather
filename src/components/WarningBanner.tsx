@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Chip } from "./ui";
+import { useNow } from "./useClock";
 import { ChevronDownIcon } from "./icons";
 import { activeWarnings } from "@/lib/weather-format";
 import type { WarningLevel, WeatherWarning } from "@/lib/warning-types";
@@ -28,45 +29,6 @@ const LEVEL: Record<WarningLevel, { label: string; colour: string; tone: "warn" 
 };
 
 /**
- * A once-a-minute clock, shared by every banner on the page.
- *
- * An external store rather than an interval in an effect, for two reasons. The
- * browser's clock is exactly the kind of outside-React system this hook exists
- * for — and, more to the point, it has a server snapshot. The server cannot
- * know what time it will be when this tree hydrates, so filtering by the real
- * clock during the first render would produce markup that does not match what
- * the server sent: a hydration mismatch on the one element of this page that
- * must not flicker. `0` is the server's answer, which filters nothing; the
- * real time arrives once the subscription is live.
- */
-const clock = {
-  at: 0,
-  listeners: new Set<() => void>(),
-  timer: null as ReturnType<typeof setInterval> | null,
-
-  subscribe(listener: () => void): () => void {
-    clock.listeners.add(listener);
-    if (clock.timer === null) {
-      clock.at = Date.now();
-      clock.timer = setInterval(() => {
-        clock.at = Date.now();
-        for (const l of clock.listeners) l();
-      }, 60_000);
-    }
-    return () => {
-      clock.listeners.delete(listener);
-      if (clock.listeners.size === 0 && clock.timer !== null) {
-        clearInterval(clock.timer);
-        clock.timer = null;
-      }
-    };
-  },
-  snapshot: (): number => clock.at,
-  /** Nothing to compare against on the server, so nothing is dropped there. */
-  serverSnapshot: (): number => 0,
-};
-
-/**
  * The warnings still in force, on the browser's clock.
  *
  * The server already drops expired entries when it parses the feed. This is
@@ -75,7 +37,7 @@ const clock = {
  * must not still be on screen at one o'clock.
  */
 function useActiveWarnings(warnings: WeatherWarning[]): WeatherWarning[] {
-  const now = useSyncExternalStore(clock.subscribe, clock.snapshot, clock.serverSnapshot);
+  const now = useNow();
   return useMemo(() => (now === 0 ? warnings : activeWarnings(warnings, now)), [warnings, now]);
 }
 

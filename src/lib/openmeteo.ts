@@ -176,9 +176,14 @@ export async function getNowcast(
   offsetMinutes: number | null = null,
   now: number = Date.now()
 ): Promise<Section<{ periods: MinutelyPeriod[] }>> {
+  /*
+   * Two forecast days, because a request made late in the evening would
+   * otherwise have its window truncated at midnight and report the rain
+   * stopping when the data merely ran out.
+   */
   const url =
     `${BASE}?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}` +
-    `&minutely_15=precipitation,weather_code&forecast_days=1&timeformat=unixtime`;
+    `&minutely_15=precipitation,weather_code&forecast_days=2&timeformat=unixtime`;
 
   const raw = await get(url, TTL_NOWCAST);
   if (isError(raw)) return raw.error as Section<{ periods: MinutelyPeriod[] }>;
@@ -201,8 +206,16 @@ export async function getNowcast(
   for (let i = 0; i < times.length; i += 1) {
     const unix = times[i];
     if (unix === null || unix + 900 <= nowSeconds) continue;
-    /* One hour of quarter-hours, which is what the card shows. */
-    if (periods.length >= 4) break;
+    /*
+     * Two hours of quarter-hours.
+     *
+     * One hour was the Xweather nowcast's window and it is too short for the
+     * question this card actually answers — "do I need a coat before I leave"
+     * is usually asked about the next hour and a half, not the next sixty
+     * minutes. The series is fetched whole either way, so the extra hour costs
+     * nothing; the cap exists only to stop the strip running off the card.
+     */
+    if (periods.length >= 8) break;
 
     const kind = codes[i] === null ? "unknown" : (WMO[codes[i] as number] ?? "unknown");
     const fields = conditionFields(kind, false);

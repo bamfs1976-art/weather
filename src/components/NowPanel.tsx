@@ -1,13 +1,13 @@
 "use client";
 
 import { WarningBanner } from "./WarningBanner";
+import { RainTimeline } from "./RainTimeline";
 import { Card, Chip, EmptyState, Meter, Metric, SectionBody, WindArrow } from "./ui";
 import { WeatherHero } from "./WeatherHero";
 import { MetricTile, RadialRing, Sparkline, UVScale, WindCompass } from "./MetricTile";
 import { SunArc } from "./SunArc";
 import { ForecastComparison } from "./ForecastComparison";
 import { ConditionIcon, SunIcon } from "./icons";
-import { SeriesChart } from "./Chart";
 import { MapPanel } from "./MapPanel";
 import {
   dash,
@@ -210,7 +210,7 @@ export function NowPanel({
 
       <NextRainCard overview={overview} units={units} hour12={hour12} />
 
-      <MinutelyBlock overview={overview} units={units} hour12={hour12} />
+      <RainTimeline section={sections.minutely} units={units} hour12={hour12} />
 
       <Card
         title="Full conditions"
@@ -486,60 +486,3 @@ function humidityComfort(dewpointC: number | null | undefined): string | undefin
 }
 
 
-function MinutelyBlock({
-  overview,
-  units,
-  hour12,
-}: {
-  overview: WeatherOverview;
-  units: UnitSystem;
-  hour12: boolean;
-}) {
-  const section = overview.sections.minutely;
-  const periods = section?.data?.periods ?? [];
-
-  if (!section?.ok || periods.length === 0) return null;
-
-  const rates = periods.map((p) =>
-    units === "metric"
-      ? (p.precipRateMM ?? p.precipMM ?? 0)
-      : (p.precipRateIN ?? p.precipIN ?? 0)
-  );
-  const total = rates.reduce((sum, value) => sum + (value ?? 0), 0);
-
-  const firstWet = periods.findIndex(
-    (p, i) => (rates[i] ?? 0) > 0 && (p.precipRateMM ?? p.precipMM ?? 0) > 0
-  );
-
-  return (
-    <Card
-      title="Next hour, minute by minute"
-      subtitle={
-        total <= 0
-          ? "No precipitation expected in the next 60 minutes"
-          : firstWet >= 0
-            ? `Precipitation starting around ${formatTime(periods[firstWet].dateTimeISO, hour12)}`
-            : "Precipitation expected"
-      }
-    >
-      <SeriesChart
-        labels={periods.map((p, i) =>
-          i % 10 === 0 ? formatTime(p.dateTimeISO, hour12) : ""
-        )}
-        series={[
-          {
-            label: `Precip rate (${units === "metric" ? "mm/hr" : "in/hr"})`,
-            color: "#38bdf8",
-            fill: true,
-            values: rates.map((value) => (isNum(value) ? value : 0)),
-            format: (v) => v.toFixed(2),
-          },
-        ]}
-        height={140}
-        showEvery={10}
-        yFormat={(v) => v.toFixed(1)}
-        ariaLabel="Minute-by-minute precipitation rate for the next hour"
-      />
-    </Card>
-  );
-}

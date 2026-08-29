@@ -230,6 +230,33 @@ is an access too**, which is the part that is easy to forget.
   mappings are covered by a test — check the codes against Xweather's list
   rather than from memory, which got five of them wrong in one sitting.
 
+## The rain timeline
+
+`RainTimeline` on **Now** answers "is it about to rain?" in a sentence, the way
+a rain-radar app does, from a forecast the page already fetches. Two hours of
+quarter-hour steps from Open-Meteo `minutely_15`; no extra call, no allowance.
+
+- **`rainOutlook()` in `weather-format.ts` is pure and takes no clock.** Every
+  answer is an instant from the series, so the caller decides what "in 25
+  minutes" means. That keeps the hydration hazard in the component instead of
+  baked into a value the server computed.
+- **`peak` is the peak of the spell being described, not of the window.** A
+  light shower in fifteen minutes followed by a downpour in an hour was being
+  announced as "Moderate rain in 15 min" — the imminent spell labelled with a
+  later one's intensity. `windowPeak` and `moreLater` carry the rest.
+- **`endsISO` is null when the rain is still falling at the end of the
+  window**, which is a different statement from "stops at the end" and must not
+  be rendered as one.
+- **`useNow()` (`components/useClock.ts`) reports 0 until the browser takes
+  over** and every caller must treat it as "no clock yet" — show the absolute
+  time on the first paint, add the relative phrase after. The first render is
+  then less specific rather than wrong. `WarningBanner` uses the same hook;
+  there is one timer on the page.
+- **It is a model, not radar**, and the card says so. Good for "rain this
+  hour", less sharp than radar at "rain in eight minutes". Do not let the
+  headline's confident phrasing outrun that. The Maps tab radar loop is where
+  the rain actually is.
+
 ## Sun and moon are computed, not fetched
 
 `lib/sunmoon.ts` is the one data set with no upstream: NOAA's solar equations
