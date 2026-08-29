@@ -20,7 +20,8 @@ already in the app, or (sun and moon) to arithmetic.
 | Severe weather warnings | MeteoAlarm CAP → NSWWS RSS |
 | Maps | Xweather rasters |
 | Second opinion | Xweather hourly + MET Norway |
-| Nowcast (next hour) | Open-Meteo `minutely_15` |
+| Nowcast (next 2 h) | Open-Meteo `minutely_15` |
+| Rain radar | RainViewer tiles + OpenStreetMap base |
 | Last 24 hours | Open-Meteo `past_days` |
 | Air quality | Open-Meteo (CAMS), European AQI |
 | Pollen | Open-Meteo (CAMS) |
@@ -229,6 +230,45 @@ is an access too**, which is the part that is easy to forget.
   `R`/`ZR` rain, `WM` wintry mix, `SC` partly, `BK` mostly, `FW` fair. Twenty-two
   mappings are covered by a test — check the codes against Xweather's list
   rather than from memory, which got five of them wrong in one sitting.
+
+## The radar
+
+`RadarMap` on **Now** is real weather radar — RainViewer's public index, ~2 h of
+observed frames plus a short extrapolation, keyless. It answers *where the rain
+is*; the rain timeline below answers *when it arrives*. Radar is an observation
+and a model forecast is not, which is why both are on the page.
+
+- **It is a tile service, not a composite.** The Xweather map takes a centre and
+  a zoom and returns one rendered picture; RainViewer serves XYZ tiles, so the
+  Web Mercator projection lives in `lib/tiles.ts` and the tiles are laid out as
+  absolutely positioned images. Forty lines of arithmetic instead of Leaflet,
+  which is what convention 5 is for. The projection is checked by round-trip
+  against an independent inverse and by asserting the point lands dead centre
+  across 36 place/zoom/viewport combinations — **an off-by-one in a tile grid
+  still looks like a plausible map**, so eyeballing it proves nothing.
+- **Tiles load straight from the browser.** Both sources are keyless, so a
+  proxy would add a serverless hop and re-create the shared-cache hazard
+  `/api/map` was bitten by, for nothing. Only the small JSON index goes through
+  `/api/radar`, which sidesteps any question about CORS on the index.
+- **`/api/radar` may be publicly cached**, unlike `/api/map`: the response is
+  identical for every viewer and carries no credentials. That difference is the
+  whole reason the map route's caching rules do not apply here.
+- **Written against published docs, unverified from the build environment** —
+  the egress proxy refuses `api.rainviewer.com`, as it does every Met Office
+  host. So every field is optional and coerced, a renamed `nowcast` key
+  degrades to past-frames-only rather than failing, and `/api/diagnostics`
+  reports `pastFrames`/`forecastFrames`: **a successful request with zero
+  frames is a wrong assumption about the shape, not a quiet radar**, and on the
+  map those two look identical.
+- **The base map is OpenStreetMap**, attributed on the card as their licence
+  requires. Their tile policy discourages heavy use; a personal dashboard is
+  within it, but if the tiles ever start returning errors this is the first
+  thing to suspect.
+- **`nowIndex` is the last *observed* frame, not the last frame.** The scrubber
+  opens there so the map shows what radar has seen rather than an
+  extrapolation, and the forecast frames sit to its right where they read as
+  the future. They are labelled, and the caption says they are good for about
+  half an hour and are not a forecast beyond that.
 
 ## The rain timeline
 

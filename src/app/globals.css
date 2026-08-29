@@ -480,6 +480,19 @@ body {
 }
 
 /*
+ * The "you are here" pin on the radar. A ring rather than a filled dot so the
+ * radar underneath it stays readable — the point of the map is what the
+ * weather is doing at that spot, and a solid marker hides exactly that.
+ */
+.wx-radar-pin {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55), 0 0 8px rgba(0, 0, 0, 0.5);
+}
+
+/*
  * Provenance under the hero condition. Deliberately quiet: it qualifies the
  * temperature above it without competing with it.
  */

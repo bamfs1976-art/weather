@@ -25,6 +25,7 @@ import { getMetNoForecast } from "@/lib/metno";
 import { getAirQuality as getOpenMeteoAirQuality } from "@/lib/airquality";
 import { getNowcast, getRecent as getOpenMeteoRecent } from "@/lib/openmeteo";
 import { getSunMoon as computeSunMoon } from "@/lib/sunmoon";
+import { getRadarIndex } from "@/lib/rainviewer";
 import { getWeatherWarnings, regionFor } from "@/lib/warnings";
 import { getAuroraStatus } from "@/lib/aurora";
 import { getModelSpread, MODELS } from "@/lib/models";
@@ -164,10 +165,11 @@ export async function GET(request: NextRequest) {
             getEnsemble(point.lat, point.lon, 6),
             getClimateContext(point.lat, point.lon),
           ]);
-        const [air, nowcast, trailing] = await Promise.all([
+        const [air, nowcast, trailing, radar] = await Promise.all([
           getOpenMeteoAirQuality(point.lat, point.lon, null, 24),
           getNowcast(point.lat, point.lon, null),
           getOpenMeteoRecent(point.lat, point.lon, null, 24),
+          getRadarIndex(),
         ]);
         const sun = computeSunMoon(point.lat, point.lon);
 
@@ -203,6 +205,21 @@ export async function GET(request: NextRequest) {
             endpoint: "Open-Meteo trailing 24h",
             ok: trailing.ok, code: trailing.code, message: trailing.error,
             hours: trailing.data?.periods.length ?? 0,
+          },
+          {
+            endpoint: "RainViewer radar index",
+            ok: radar.ok, code: radar.code, message: radar.error,
+            /*
+             * The frame counts are the whole point of this row. The client was
+             * written against published documentation and could not be
+             * verified from the build environment, so a successful request
+             * with zero frames is a wrong assumption about the response shape,
+             * not a quiet radar — and on the map those two look identical.
+             */
+            pastFrames: radar.data?.pastCount ?? 0,
+            forecastFrames: radar.data?.forecastCount ?? 0,
+            tileHost: radar.data?.host ?? null,
+            latestFrame: radar.data?.frames[radar.data.nowIndex]?.iso ?? null,
           },
           {
             /* No upstream: pure arithmetic on the coordinates. Reported so a

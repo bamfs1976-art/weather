@@ -9,6 +9,7 @@ import { SunArc } from "./SunArc";
 import { ForecastComparison } from "./ForecastComparison";
 import { ConditionIcon, SunIcon } from "./icons";
 import { MapPanel } from "./MapPanel";
+import { RadarMap } from "./RadarMap";
 import {
   dash,
   formatDayMonth,
@@ -308,10 +309,13 @@ export function NowPanel({
         </div>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-      </div>
+      {/*
+        * Radar first, then the layered weather map. Radar answers "where is
+        * the rain and is it coming here", which is the question the map is
+        * usually opened for; the Xweather map answers everything else.
+        */}
+      <RadarMap place={place} hour12={hour12} />
 
-      {/* The map lives on the main view — it is what people look at most. */}
       <MapPanel place={place} theme={theme} />
     </div>
   );
