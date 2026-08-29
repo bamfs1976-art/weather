@@ -340,10 +340,21 @@ export default function WeatherPage() {
       </div>
 
       <footer className="wx-dim mt-8 border-t border-slate-400/15 pt-4 text-xs">
+        {/*
+          * Attribution follows the data, and the data moved. Crediting
+          * Xweather for the forecast when the forecast is the Met Office's
+          * would be wrong in both directions: it misstates whose numbers these
+          * are, and it withholds credit from the sources actually carrying the
+          * page.
+          */}
         <p>
-          Weather data © Vaisala Xweather. Conditions are interpolated for the
-          exact coordinates shown; station observations, archives and forecasts
-          come from the Xweather Weather API.
+          Forecasts © Met Office (Weather DataHub), under the Open Government
+          Licence. Severe weather warnings from the Met Office via MeteoAlarm.
+          Radar and satellite imagery © Vaisala Xweather, which also supplies
+          the second-opinion forecast. Nowcast, air quality, pollen, model
+          spread and reanalysis from Open-Meteo (CAMS, ECMWF and ERA5). River,
+          tide and flood data © Environment Agency, under the Open Government
+          Licence. Sun and moon times are computed from the coordinates shown.
         </p>
         {overview && (
           <p className="mt-1">

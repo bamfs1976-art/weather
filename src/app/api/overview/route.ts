@@ -5,6 +5,7 @@ import {
   httpStatusForCode,
   resolvePlace,
 } from "@/lib/xweather";
+import { resolvePlaceKeyless } from "@/lib/geocode";
 import { getPollen } from "@/lib/pollen";
 import {
   getMetOfficeDaily,
@@ -48,17 +49,36 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (!hasCredentials()) {
-    return NextResponse.json(
-      {
-        error:
-          "Xweather credentials are not configured. Copy .env.example to .env and set XWEATHER_CLIENT_ID and XWEATHER_CLIENT_SECRET.",
-      },
-      { status: 503 }
-    );
-  }
+  /*
+   * No Xweather credentials is no longer fatal.
+   *
+   * This gate dates from when Xweather supplied every number on the page.
+   * It now supplies the maps and the second opinion, so refusing to build the
+   * dashboard without it fails eight working upstreams for the sake of one.
+   * The comparison section degrades to its notice like any other, which is
+   * what convention 3 is for.
+   */
 
-  const resolved = await resolvePlace(place);
+  /*
+   * Resolve keylessly first, and only fall back to Xweather.
+   *
+   * Every section below is fetched for these coordinates, so a failure here
+   * blanks the whole page — which is exactly what happened when the Xweather
+   * key was paused: a dashboard whose numbers now come from the Met Office,
+   * Open-Meteo and the Environment Agency went dark because it could not ask
+   * Xweather where Swansea was. Geocoding is neither a map nor a second
+   * opinion, so it does not belong on the one provider that is rationed.
+   *
+   * Xweather still gets a turn last, because it resolves identifiers
+   * Open-Meteo will not — an airport code, say. It is skipped entirely when
+   * its credentials are absent or its breaker is open, so a paused key costs
+   * nothing here.
+   */
+  let resolved = await resolvePlaceKeyless(place);
+  if ((!resolved.ok || !resolved.data) && hasCredentials()) {
+    const viaXweather = await resolvePlace(place);
+    if (viaXweather.ok && viaXweather.data) resolved = viaXweather;
+  }
   if (!resolved.ok || !resolved.data) {
     return NextResponse.json(
       { error: resolved.error ?? "Could not resolve that location." },

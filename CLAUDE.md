@@ -28,6 +28,22 @@ already in the app, or (sun and moon) to arithmetic.
 | Model spread, ensemble, ERA5 | Open-Meteo |
 | Rivers, tides, floods | Environment Agency |
 
+- **Geocoding is keyless, and must stay that way.** Every section is fetched
+  for the coordinates `resolvePlace` returns, so a failure there blanks the
+  *whole page* — and while that ran through Xweather, a paused Xweather key
+  took the dashboard down even with the Met Office, Open-Meteo and the EA all
+  answering. `lib/geocode.ts` parses a `lat,lon` pair outright (the default
+  place and every shared `?p=` link), asks Open-Meteo for names, and only then
+  falls back to Xweather for the identifiers Open-Meteo will not take, such as
+  airport codes. **Do not put place resolution back on a rationed provider.**
+- **A missing Xweather key is no longer fatal to `/api/overview`.** That gate
+  dates from when Xweather supplied every number; refusing to build the page
+  without it now fails eight working upstreams for the sake of one.
+- **The geocoder separates `network` from `invalid_location`**, for the reason
+  `capReason` exists on the warnings feed: "cannot reach it" and "no such
+  place" call for opposite responses, and telling someone their spelling is
+  wrong when the service is down is the worse of the two mistakes.
+
 **Retired, deliberately:** Xweather's `conditions`, `observations`,
 `forecasts` (daily and daynight), `alerts`, `airquality`, `sunmoon`, `threats`,
 `lightning/summary` and `phrases/summary`. The forecast ones because the Met
