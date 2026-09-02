@@ -53,3 +53,41 @@ const clock = {
 export function useNow(): number {
   return useSyncExternalStore(clock.subscribe, clock.snapshot, clock.serverSnapshot);
 }
+
+/*
+ * The same clock at one-second resolution, for the Lightning tab, where
+ * "12 s ago" is the whole point. A separate store rather than a faster shared
+ * one: a warning banner re-rendering sixty times a minute buys nothing, and
+ * this timer only runs while something is subscribed to it. Same server
+ * snapshot of 0, same rule for callers.
+ */
+const seconds = {
+  at: 0,
+  listeners: new Set<() => void>(),
+  timer: null as ReturnType<typeof setInterval> | null,
+
+  subscribe(listener: () => void): () => void {
+    seconds.listeners.add(listener);
+    if (seconds.timer === null) {
+      seconds.at = Date.now();
+      seconds.timer = setInterval(() => {
+        seconds.at = Date.now();
+        for (const l of seconds.listeners) l();
+      }, 1000);
+    }
+    return () => {
+      seconds.listeners.delete(listener);
+      if (seconds.listeners.size === 0 && seconds.timer !== null) {
+        clearInterval(seconds.timer);
+        seconds.timer = null;
+      }
+    };
+  },
+  snapshot: (): number => seconds.at,
+  serverSnapshot: (): number => 0,
+};
+
+/** The current time to the second, or **0 before the browser takes over**. */
+export function useNowSeconds(): number {
+  return useSyncExternalStore(seconds.subscribe, seconds.snapshot, seconds.serverSnapshot);
+}

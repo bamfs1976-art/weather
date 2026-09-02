@@ -11,6 +11,7 @@ import { WeatherHistoryPanel } from "@/components/WeatherHistoryPanel";
 import { AirSunPanel } from "@/components/AirSunPanel";
 import { WaterPanel } from "@/components/WaterPanel";
 import { LocalPanel } from "@/components/LocalPanel";
+import { LightningPanel } from "@/components/LightningPanel";
 import { Logo } from "@/components/Logo";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CardSkeleton, Notice } from "@/components/ui";
@@ -35,6 +36,7 @@ const TABS = [
   { id: "now", label: "Now" },
   { id: "hourly", label: "Hourly" },
   { id: "forecast", label: "7-day" },
+  { id: "lightning", label: "Lightning" },
   { id: "recent", label: "Last 24h" },
   { id: "history", label: "History" },
   { id: "water", label: "Rivers & Sea" },
@@ -90,6 +92,16 @@ export default function WeatherPage() {
 
       const savedFavorites = localStorage.getItem(STORAGE.favorites);
       if (savedFavorites) setFavorites(JSON.parse(savedFavorites) as SavedPlace[]);
+
+      /*
+       * A shared link can name a tab as well as a place — the Lightning tab's
+       * share button writes `&tab=lightning` so the recipient lands on the
+       * strike, not on the forecast. Unknown values are ignored.
+       */
+      const fromTab = new URLSearchParams(window.location.search).get("tab");
+      if (fromTab && TABS.some((option) => option.id === fromTab)) {
+        setTab(fromTab as TabId);
+      }
 
       const fromUrl = new URLSearchParams(window.location.search).get("p");
       if (fromUrl) {
@@ -311,6 +323,9 @@ export default function WeatherPage() {
             {tab === "forecast" && (
               <ForecastPanel overview={overview} units={units} hour12={hour12} />
             )}
+            {tab === "lightning" && (
+              <LightningPanel overview={overview} units={units} hour12={hour12} />
+            )}
             {tab === "recent" && (
               <RecentPanel overview={overview} units={units} hour12={hour12} />
             )}
@@ -354,7 +369,9 @@ export default function WeatherPage() {
           the second-opinion forecast. Nowcast, air quality, pollen, model
           spread and reanalysis from Open-Meteo (CAMS, ECMWF and ERA5). River,
           tide and flood data © Environment Agency, under the Open Government
-          Licence. Sun and moon times are computed from the coordinates shown.
+          Licence. Live lightning strikes from the Blitzortung.org community
+          network, for private use. Sun and moon times are computed from the
+          coordinates shown.
         </p>
         {overview && (
           <p className="mt-1">

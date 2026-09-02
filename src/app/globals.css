@@ -1182,3 +1182,79 @@ body {
   letter-spacing: 0.01em;
   color: var(--wx-accent-text);
 }
+
+/* ------------------------------------------------------------------ */
+/* Lightning tab                                                        */
+/* ------------------------------------------------------------------ */
+
+/* The headline card takes the threat level as a tint, so the page reads the
+   level before the words are read. The tokens already exist; only the mix
+   differs by level. */
+.wx-threat { transition: background 300ms ease, border-color 300ms ease; }
+.wx-threat-distant { border-color: color-mix(in srgb, var(--wx-warn) 40%, transparent); }
+.wx-threat-near {
+  border-color: color-mix(in srgb, var(--wx-warn) 60%, transparent);
+  background: linear-gradient(180deg, var(--wx-warn-bg), transparent 60%), var(--wx-card-bg, var(--wx-surface));
+}
+.wx-threat-overhead {
+  border-color: color-mix(in srgb, var(--wx-danger) 70%, transparent);
+  background: linear-gradient(180deg, var(--wx-danger-bg), transparent 60%), var(--wx-card-bg, var(--wx-surface));
+  animation: wx-threat-pulse 2s ease-in-out infinite;
+}
+@keyframes wx-threat-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--wx-danger) 35%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--wx-danger) 0%, transparent); }
+}
+
+.wx-threat-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--wx-warn-bg);
+  color: var(--wx-warn);
+}
+.wx-threat-icon > svg { width: 26px; height: 26px; }
+.wx-threat-overhead .wx-threat-icon,
+.wx-threat-near .wx-threat-icon { background: var(--wx-danger-bg); color: var(--wx-danger); }
+
+.wx-strike-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+/* A strike under two minutes old pops once when it lands. transform-box is
+   what makes the scale run about the circle's own centre rather than the
+   SVG's origin. */
+.wx-strike-new {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wx-strike-pop 900ms ease-out;
+}
+@keyframes wx-strike-pop {
+  0% { transform: scale(3); opacity: 0.2; }
+  60% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+.wx-live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: wx-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wx-threat-overhead { animation: none; }
+  .wx-strike-new { animation: none; }
+  .wx-live-dot { animation: none; }
+}

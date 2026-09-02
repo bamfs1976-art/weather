@@ -28,6 +28,7 @@ already in the app, or (sun and moon) to arithmetic.
 | **Sun & moon** | **computed locally — no upstream at all** |
 | Model spread, ensemble, ERA5 | Open-Meteo |
 | Rivers, tides, floods | Environment Agency |
+| **Live lightning strikes** | **Blitzortung.org WebSocket, straight from the browser** |
 
 - **Geocoding is keyless, and must stay that way.** Every section is fetched
   for the coordinates `resolvePlace` returns, so a failure there blanks the
@@ -84,9 +85,12 @@ src/
 │   ├── RecentPanel.tsx           # Trailing 24 hours
 │   ├── WeatherHistoryPanel.tsx   # Archive explorer (fetches independently)
 │   ├── AirSunPanel.tsx           # Air quality + sun/moon
+│   ├── LightningPanel.tsx        # Live strikes, hotspots, alarm (Blitzortung)
+│   ├── useLightningFeed.ts       # The Blitzortung WebSocket, as a hook
 │   └── MapPanel.tsx              # Raster map with layer picker
 └── lib/
     ├── xweather.ts         # SERVER ONLY — reads the credentials
+    ├── lightning.ts        # Client-safe: strike decoding, distance, threat, hotspots
     ├── weather-types.ts    # Xweather response types
     └── weather-format.ts   # Client-safe formatting helpers
 ```
@@ -269,6 +273,71 @@ and a model forecast is not, which is why both are on the page.
   extrapolation, and the forecast frames sit to its right where they read as
   the future. They are labelled, and the caption says they are good for about
   half an hour and are not a forecast beyond that.
+
+## The lightning tab
+
+`LightningPanel` is a free stand-in for the paid strike-tracker apps — Latest,
+Hotspots and Radar views over a map, the nearest strike and how far away it is,
+an alarm with a radius, and the Met Office's chance of lightning for the days
+ahead. The data is **Blitzortung.org**, a volunteer detection network whose
+strikes are published to the browser over a public WebSocket — the feed their
+own map at map.blitzortung.org draws from. Keyless; the terms are private,
+non-commercial use with attribution, so keep the credit on the cards and never
+put this behind anything that charges.
+
+- **The socket is opened from the browser, not the server.** A serverless
+  function cannot hold a WebSocket open, and the feed is worldwide and
+  unfiltered — tens of strikes a second in a busy hour — so the client decodes
+  each message, measures the distance to the place, keeps anything within
+  250 km and drops the rest. `useLightningFeed` pushes kept strikes onto a ref
+  and flushes to React state once a second; setting state per message would
+  re-render the map fifty times a second.
+- **Written against the reverse-engineered protocol and unverified from the
+  build environment**, which refuses every `blitzortung.org` host. The
+  assumptions are listed at the top of `lib/lightning.ts`: hosts `ws1`–`ws8`,
+  `{"a":111}` to subscribe, one LZW-compressed JSON strike per message, `time`
+  in nanoseconds. Every field is optional and coerced, plain JSON is tried
+  before the LZW decoder so dropping the compression would not break it, and
+  the epoch unit is told from magnitude. The panel's "Feed details" shows raw
+  counters — messages, decoded, undecodable, kept, last message age. **A live
+  socket with messages arriving and nothing decoding is a wrong assumption
+  about the shape, not a quiet sky**; on the map the two look identical.
+- **Hosts rotate on failure and on silence.** A socket that opens and never
+  speaks for 45 s is closed and the next host tried; after two full rounds the
+  status reads `offline` and the page shows whatever it saw earlier. Backoff
+  caps at a minute — every host having refused is not a reason to hammer them.
+- **`threatLevel` counts only the last 15 minutes**: within 10 km is
+  "overhead", 25 "near", 100 "distant". A storm that passed an hour ago is
+  history, and the headline must not say otherwise. `summariseStrikes` covers
+  the hour; the two windows are deliberate.
+- **The alarm rings once per storm, not per strike**, and never for a strike
+  older than two minutes — a backlog replayed on reconnect must not set it
+  off. Sound is a Web Audio chime created inside the toggle's click handler,
+  because a context created later is muted by the browser. Notifications use
+  the page-level API and only work while the tab is open; there is no push
+  server and the card says so.
+- **Strikes are persisted per place in localStorage** (`wx:lightning:<lat,lon>`)
+  for the 24-hour hotspot grid, capped at 5,000, so a page reopened after a
+  storm still knows the storm happened. A change of place starts from an empty
+  sky rather than plotting one town's strikes over another.
+- **`hotspots()` grids in degrees, widened by cos(lat)** so the cells are
+  square on the ground, and anchors the grid to the place so it does not shift
+  as strikes arrive. Distance rings on the map come from `metresPerPixel`,
+  the Web Mercator scale at the place's latitude — the tile arithmetic itself
+  is still `tiles.ts`.
+- **The pure functions are checked, not eyeballed**: an LZW round trip
+  against an independent encoder (including the KwKwK case), the epoch-unit
+  ladder, Swansea→Cardiff at 57 km and roughly east, ring counts, threat
+  levels across the windows, the alarm's quiet period, and hotspot cell
+  centres. The check script is in the session scratchpad rather than the
+  repo; keep the functions pure so it can be re-run.
+- **The one-second clock is `useNowSeconds()` in `useClock.ts`**, a second
+  store beside the once-a-minute one rather than a faster shared timer. Same
+  server snapshot of 0, same rule: no relative phrase until the browser takes
+  over.
+- **A shared link carries `&tab=lightning`.** `page.tsx` reads a `tab` query
+  on mount and ignores unknown values, so the recipient lands on the strike
+  rather than the forecast.
 
 ## The rain timeline
 
