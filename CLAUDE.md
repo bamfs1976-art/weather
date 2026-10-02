@@ -640,12 +640,49 @@ qualifies, and none of the extra fields fit in a two-provider diff.
   turn and re-measure `documentElement.scrollWidth`. Three plausible theories
   were wrong before that named the right element in one pass.
 
+## Xweather's own agent skills are installed
+
+`.claude/skills/` holds the six skills from
+<https://github.com/vaisala-xweather/xweather-agent-skills> (v0.15.0, MIT),
+committed so every session in this repo gets them. The vendor's documented
+Claude Code route is their plugin marketplace (Settings → Plugins), which needs
+an interactive session; copying the skills in is the equivalent for a project
+and survives in git.
+
+Two of the six are load-bearing here and answer questions this file records
+losing days to:
+
+- **`raster-maps/references/layers.md` is the authoritative layer catalog** —
+  159 codes. This is the answer to "never invent a raster layer token": check
+  the catalog rather than the MCP server or memory. **All 42 tokens in
+  `map-layers.ts` were verified against it**; the only two that did not match
+  are `countries` and `fires`, which appear solely in the comment warning
+  against them.
+- **`weather-api/references/access-cost.md` covers endpoint multipliers, rate
+  limits and allowance arithmetic** — the subject of the whole access-allowance
+  section above.
+
+The other four — `mapsgl`, `mapsgl-apple`, `mapsgl-android`, `webhooks` — cover
+a JS mapping SDK this app deliberately does without, two mobile platforms it
+does not target, and pushed delivery it does not use. They are installed for
+completeness and are safe to delete if the skill list wants trimming.
+
 ## Source attribution
 
 `Card` takes a `source` prop that renders a hairline-separated line at the
 bottom. With nine upstreams in play, a card showing a temperature without
 saying whose it is makes the Xweather / Met Office / MET Norway disagreements
 look like a bug rather than the point of the card.
+
+**Xweather attribution is a licence condition with a required form**, not a
+courtesy: a link to `https://www.xweather.com/` reading "Powered by Vaisala
+Xweather", wherever their data or imagery is displayed — and this app displays
+their radar and satellite rasters. The prose credit in the footer satisfied
+neither half (not a link, not that wording), so the link sits beside it: the
+sentence says what each source contributes, the link discharges the obligation.
+The requirement is documented in `.claude/skills/weather-api/SKILL.md`; the
+logo may be substituted for the text. **Do not remove it while any Xweather
+imagery is on the page.**
 
 ## Other open data (no keys)
 

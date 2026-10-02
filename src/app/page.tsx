@@ -350,11 +350,31 @@ export default function WeatherPage() {
         <p>
           Forecasts © Met Office (Weather DataHub), under the Open Government
           Licence. Severe weather warnings from the Met Office via MeteoAlarm.
-          Radar and satellite imagery © Vaisala Xweather, which also supplies
+          Radar and satellite imagery from Vaisala Xweather, which also supplies
           the second-opinion forecast. Nowcast, air quality, pollen, model
           spread and reanalysis from Open-Meteo (CAMS, ECMWF and ERA5). River,
           tide and flood data © Environment Agency, under the Open Government
           Licence. Sun and moon times are computed from the coordinates shown.
+        </p>
+        {/*
+          * Xweather's attribution is a licence condition, not a courtesy, and
+          * it has a required form: a link to xweather.com reading "Powered by
+          * Vaisala Xweather", wherever their data or imagery is displayed. The
+          * prose credit above satisfies neither half — it is not a link and it
+          * is not that wording — so this sits beside it rather than replacing
+          * it. The sentence above says what each source contributes; this
+          * discharges the obligation.
+          */}
+        <p className="mt-2">
+          <a
+            href="https://www.xweather.com/"
+            target="_blank"
+            rel="noreferrer"
+            title="Powered by Vaisala Xweather"
+            className="wx-accent-text underline"
+          >
+            Powered by Vaisala Xweather
+          </a>
         </p>
         {overview && (
           <p className="mt-1">
