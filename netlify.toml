@@ -14,7 +14,7 @@
   publish = ".next"
 
 [build.environment]
-  NODE_VERSION = "22"
+  NODE_VERSION = "24"
 
 # Netlify auto-detects Next.js, but declaring the plugin keeps the runtime
 # explicit and pinned to the repo rather than to UI state.
